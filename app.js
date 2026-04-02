@@ -72,7 +72,7 @@ hands.onResults((results) => {
   if (results.multiHandLandmarks.length > 0) {
     const landmarks = results.multiHandLandmarks[0];
 
-    // Draw points
+    // Draw landmarks
     for (let point of landmarks) {
       ctx.beginPath();
       ctx.arc(point.x * canvas.width, point.y * canvas.height, 5, 0, 2 * Math.PI);
@@ -81,7 +81,30 @@ hands.onResults((results) => {
     }
 
     const gesture = detectGesture(landmarks);
-    output.innerText = gesture;
+
+    // 🧠 Add to buffer
+    gestureBuffer.push(gesture);
+
+    if (gestureBuffer.length > BUFFER_SIZE) {
+      gestureBuffer.shift();
+    }
+
+    // 🧠 Find most frequent gesture in buffer
+    const counts = {};
+    gestureBuffer.forEach(g => {
+      counts[g] = (counts[g] || 0) + 1;
+    });
+
+    const stableGesture = Object.keys(counts).reduce((a, b) =>
+      counts[a] > counts[b] ? a : b
+    );
+
+    // ✅ Update only if changed
+    if (stableGesture !== lastGesture && stableGesture !== "...") {
+      lastGesture = stableGesture;
+      output.innerText = stableGesture;
+    }
+
   }
 });
 
