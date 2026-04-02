@@ -257,14 +257,7 @@ const getGesture = (landmarks, handedness) => {
     }
     
     if (indexExt && middleExt && ringExt && pinkyExt) {
-        const thumbOutward = Math.abs(landmarks[4].x - landmarks[3].x) > 0.05;
-        
-        if (thumbOutward) {
-            // Check for lateral waving movement
-            const waving = isHandWaving(handedness, landmarks[0].x);
-            return waving ? "BYE" : "HELLO"; 
-        }
-        return "B"; 
+        return "HELLO"; 
     } else if (indexExt && middleExt && ringExt && !pinkyExt) {
         return "HAPPY"; // 'W' shape
     } else if (indexExt && middleExt && !ringExt && !pinkyExt) {
