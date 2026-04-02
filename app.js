@@ -1,29 +1,32 @@
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
-const output = document.getElementById("output");
-let lastGesture = "...";
-let gestureBuffer = [];
-const BUFFER_SIZE = 10;   // frames to observe
-let lastSpoken = "";
-const confidenceValue = Math.round((counts[stableGesture] / BUFFER_SIZE) * 100);
-document.getElementById("confidence").innerText = "Confidence: " + confidenceValue + "%";
 
+const output = document.getElementById("output");
+const confidenceEl = document.getElementById("confidence");
+const statusEl = document.querySelector(".status");
+
+// 🧠 STATE
+let lastGesture = "...";
+let lastSpoken = "";
+let gestureBuffer = [];
+
+const BUFFER_SIZE = 10;
+
+// 🎥 CANVAS
 canvas.width = 420;
 canvas.height = 280;
 
-
-// 🎥 CAMERA START
+// 🎥 CAMERA
 navigator.mediaDevices.getUserMedia({ video: true })
   .then(stream => {
     video.srcObject = stream;
   });
 
-// 🧠 MEDIAPIPE SETUP
+// 🧠 MEDIAPIPE
 const hands = new Hands({
-  locateFile: (file) => {
-    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-  }
+  locateFile: (file) =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
 });
 
 hands.setOptions({
@@ -32,7 +35,7 @@ hands.setOptions({
   minTrackingConfidence: 0.7
 });
 
-// 🎯 GESTURE DETECTION FUNCTION
+// 🎯 GESTURE LOGIC
 function detectGesture(landmarks) {
   const thumb = landmarks[4].x < landmarks[3].x;
   const index = landmarks[8].y < landmarks[6].y;
@@ -40,42 +43,26 @@ function detectGesture(landmarks) {
   const ring = landmarks[16].y < landmarks[14].y;
   const pinky = landmarks[20].y < landmarks[18].y;
 
-  // 👍 THUMBS UP
-  if (thumb && !index && !middle && !ring && !pinky) {
-    return "YES";
-  }
-
-  // ✊ FIST
-  if (!index && !middle && !ring && !pinky) {
-    return "NO";
-  }
-
-  // ✋ OPEN PALM
-  if (index && middle && ring && pinky) {
-    return "HELLO";
-  }
-
-  // ☝️ ONE
-  if (index && !middle && !ring && !pinky) {
-    return "ONE";
-  }
-
-  // ✌️ TWO
-  if (index && middle && !ring && !pinky) {
-    return "TWO";
-  }
+  if (thumb && !index && !middle && !ring && !pinky) return "YES";
+  if (!index && !middle && !ring && !pinky) return "NO";
+  if (index && middle && ring && pinky) return "HELLO";
+  if (index && !middle && !ring && !pinky) return "ONE";
+  if (index && middle && !ring && !pinky) return "TWO";
 
   return "...";
 }
 
-// 🖐️ RESULTS CALLBACK
+// 🖐️ MAIN LOOP
 hands.onResults((results) => {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   if (results.multiHandLandmarks.length > 0) {
+    statusEl.innerText = "● Detecting";
+    statusEl.style.color = "#22c55e";
+
     const landmarks = results.multiHandLandmarks[0];
 
-    // Draw landmarks
+    // 🎨 Draw landmarks
     for (let point of landmarks) {
       ctx.beginPath();
       ctx.arc(point.x * canvas.width, point.y * canvas.height, 5, 0, 2 * Math.PI);
@@ -85,36 +72,48 @@ hands.onResults((results) => {
 
     const gesture = detectGesture(landmarks);
 
-    // 🧠 Add to buffer
+    // 🧠 BUFFER
     gestureBuffer.push(gesture);
-
     if (gestureBuffer.length > BUFFER_SIZE) {
       gestureBuffer.shift();
     }
 
-    // 🧠 Find most frequent gesture in buffer
+    // 🧠 COUNT FREQUENCY
     const counts = {};
     gestureBuffer.forEach(g => {
       counts[g] = (counts[g] || 0) + 1;
     });
 
+    // 🧠 FIND MOST STABLE
     const stableGesture = Object.keys(counts).reduce((a, b) =>
       counts[a] > counts[b] ? a : b
     );
 
-    // ✅ Update only if changed
+    // 📊 CONFIDENCE
+    const confidence = Math.round((counts[stableGesture] / gestureBuffer.length) * 100);
+    confidenceEl.innerText = "Confidence: " + confidence + "%";
+
+    // ✅ UPDATE OUTPUT
     if (stableGesture !== lastGesture && stableGesture !== "...") {
-  lastGesture = stableGesture;
-  output.innerText = stableGesture;
+      lastGesture = stableGesture;
+      output.innerText = stableGesture;
 
-  // 🔊 AUTO SPEAK
-    if (stableGesture !== lastSpoken) {
-      speechSynthesis.cancel();
-      speechSynthesis.speak(new SpeechSynthesisUtterance(stableGesture));
-      lastSpoken = stableGesture;
+      // 🔊 AUTO SPEAK
+      if (stableGesture !== lastSpoken) {
+        speechSynthesis.cancel();
+        speechSynthesis.speak(new SpeechSynthesisUtterance(stableGesture));
+        lastSpoken = stableGesture;
+      }
     }
-  }
 
+  } else {
+    // 🚫 NO HAND
+    statusEl.innerText = "● No Hand";
+    statusEl.style.color = "#ef4444";
+
+    output.innerText = "No Hand Detected";
+    confidenceEl.innerText = "";
+    gestureBuffer = [];
   }
 });
 
@@ -129,18 +128,26 @@ const camera = new Camera(video, {
 
 camera.start();
 
-// 🔊 SPEAK
+// 🔊 MANUAL SPEAK
 function speak() {
   const text = output.innerText;
+  speechSynthesis.cancel();
   speechSynthesis.speak(new SpeechSynthesisUtterance(text));
 }
 
 // ⏸ PAUSE
 function pauseCam() {
-  video.srcObject.getTracks().forEach(track => track.stop());
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach(track => track.stop());
+    statusEl.innerText = "● Paused";
+    statusEl.style.color = "#facc15";
+  }
 }
 
 // 🔄 RESET
 function resetText() {
   output.innerText = "...";
+  confidenceEl.innerText = "";
+  gestureBuffer = [];
+  lastGesture = "...";
 }
