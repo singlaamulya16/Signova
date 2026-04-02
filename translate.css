@@ -168,3 +168,13 @@ canvas {
   height: 200px;
   transition: 0.4s;
 }
+
+.status {
+  animation: pulseDot 1.5s infinite;
+}
+
+@keyframes pulseDot {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
