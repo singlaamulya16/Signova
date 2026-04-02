@@ -26,6 +26,43 @@
     <button class="info-btn" onclick="openModal()">ℹ</button>
   </div>
 
+  <div id="modal" class="modal hidden">
+  <div class="modal-content">
+
+    <span class="close" onclick="closeModal()">✕</span>
+
+    <h2>SIGNOVA_PROTOCOL</h2>
+    <p class="sub">Real-Time Gesture Translation Interface</p>
+
+    <div class="modal-card">
+      📷 Allow camera access to initiate live hand tracking using 21-point landmark detection
+    </div>
+
+    <div class="modal-card">
+      🖐 Perform supported gestures (HELLO, YES, NO, ONE, TWO) within the camera frame
+    </div>
+
+    <div class="modal-card">
+      🧠 System stabilizes predictions using frame buffering to eliminate flicker
+    </div>
+
+    <div class="modal-card">
+      🔤 Detected gestures are converted into text output in real-time
+    </div>
+
+    <div class="modal-card">
+      🔊 Audio feedback is automatically generated using speech synthesis
+    </div>
+
+    <div class="modal-card">
+      ⚡ Entire pipeline runs locally in-browser for low-latency performance
+    </div>
+
+    <button class="ack-btn" onclick="closeModal()">INITIALIZE</button>
+
+  </div>
+</div>
+
   <!-- 🎬 MAIN SECTION -->
   <div class="main">
 
