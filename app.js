@@ -5,6 +5,7 @@ const output = document.getElementById("output");
 let lastGesture = "...";
 let gestureBuffer = [];
 const BUFFER_SIZE = 10;   // frames to observe
+let lastSpoken = "";
 
 canvas.width = 420;
 canvas.height = 280;
@@ -101,9 +102,16 @@ hands.onResults((results) => {
 
     // ✅ Update only if changed
     if (stableGesture !== lastGesture && stableGesture !== "...") {
-      lastGesture = stableGesture;
-      output.innerText = stableGesture;
+  lastGesture = stableGesture;
+  output.innerText = stableGesture;
+
+  // 🔊 AUTO SPEAK
+    if (stableGesture !== lastSpoken) {
+      speechSynthesis.cancel();
+      speechSynthesis.speak(new SpeechSynthesisUtterance(stableGesture));
+      lastSpoken = stableGesture;
     }
+  }
 
   }
 });
