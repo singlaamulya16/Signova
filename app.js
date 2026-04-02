@@ -151,3 +151,40 @@ function resetText() {
   gestureBuffer = [];
   lastGesture = "...";
 }
+
+// ✨ PARTICLES
+const pCanvas = document.getElementById("particles");
+const pCtx = pCanvas.getContext("2d");
+
+pCanvas.width = window.innerWidth;
+pCanvas.height = window.innerHeight;
+
+let particles = [];
+
+for (let i = 0; i < 80; i++) {
+  particles.push({
+    x: Math.random() * pCanvas.width,
+    y: Math.random() * pCanvas.height,
+    radius: Math.random() * 2,
+    dx: (Math.random() - 0.5) * 0.5,
+    dy: (Math.random() - 0.5) * 0.5
+  });
+}
+
+function animateParticles() {
+  pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+
+  particles.forEach(p => {
+    p.x += p.dx;
+    p.y += p.dy;
+
+    pCtx.beginPath();
+    pCtx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+    pCtx.fillStyle = "rgba(34,197,94,0.5)";
+    pCtx.fill();
+  });
+
+  requestAnimationFrame(animateParticles);
+}
+
+animateParticles();
