@@ -1,209 +1,236 @@
-const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
+// Signova App Logic
+console.log("Signova System Initialized");
 
-const output = document.getElementById("output");
-const confidenceEl = document.getElementById("confidence");
-const statusEl = document.querySelector(".status");
+// Elements
+const videoElement = document.getElementById('input-video');
+const canvasElement = document.getElementById('output-canvas');
+const canvasCtx = canvasElement ? canvasElement.getContext('2d') : null;
+const statusDot = document.getElementById('system-dot');
+const trackerStatus = document.getElementById('tracker-status');
+const gestureOutput = document.getElementById('gesture-output');
+const confidenceScore = document.getElementById('confidence-score');
 
-// 🧠 STATE
-let lastGesture = "...";
-let lastSpoken = "";
-let gestureBuffer = [];
+// Modal Elements
+const infoBtn = document.getElementById('info-btn');
+const closeModalBtn = document.getElementById('close-modal');
+const infoModal = document.getElementById('info-modal');
 
-const BUFFER_SIZE = 10;
-
-// 🎥 CANVAS
-canvas.width = 420;
-canvas.height = 280;
-
-// 🎥 CAMERA
-navigator.mediaDevices.getUserMedia({ video: true })
-  .then(stream => {
-    video.srcObject = stream;
-  });
-
-// 🧠 MEDIAPIPE
-const hands = new Hands({
-  locateFile: (file) =>
-    `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-});
-
-hands.setOptions({
-  maxNumHands: 1,
-  minDetectionConfidence: 0.7,
-  minTrackingConfidence: 0.7
-});
-
-// 🎯 GESTURE LOGIC
-function detectGesture(landmarks) {
-  const thumb = landmarks[4].x < landmarks[3].x;
-  const index = landmarks[8].y < landmarks[6].y;
-  const middle = landmarks[12].y < landmarks[10].y;
-  const ring = landmarks[16].y < landmarks[14].y;
-  const pinky = landmarks[20].y < landmarks[18].y;
-
-  if (thumb && !index && !middle && !ring && !pinky) return "YES";
-  if (!index && !middle && !ring && !pinky) return "NO";
-  if (index && middle && ring && pinky) return "HELLO";
-  if (index && !middle && !ring && !pinky) return "ONE";
-  if (index && middle && !ring && !pinky) return "TWO";
-
-  return "...";
-}
-
-// 🖐️ MAIN LOOP
-hands.onResults((results) => {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  if (results.multiHandLandmarks.length > 0) {
-    statusEl.innerText = "● Detecting";
-    statusEl.style.color = "#22c55e";
-
-    const landmarks = results.multiHandLandmarks[0];
-
-    // 🎨 Draw landmarks
-    for (let point of landmarks) {
-      ctx.beginPath();
-      ctx.arc(point.x * canvas.width, point.y * canvas.height, 5, 0, 2 * Math.PI);
-      ctx.fillStyle = "#22c55e";
-      ctx.fill();
-    }
-
-    const gesture = detectGesture(landmarks);
-
-    // 🧠 BUFFER
-    gestureBuffer.push(gesture);
-    if (gestureBuffer.length > BUFFER_SIZE) {
-      gestureBuffer.shift();
-    }
-
-    // 🧠 COUNT FREQUENCY
-    const counts = {};
-    gestureBuffer.forEach(g => {
-      counts[g] = (counts[g] || 0) + 1;
+if (infoBtn && closeModalBtn && infoModal) {
+    infoBtn.addEventListener('click', () => {
+        infoModal.classList.remove('hidden');
     });
+    closeModalBtn.addEventListener('click', () => {
+        infoModal.classList.add('hidden');
+    });
+}
 
-    // 🧠 FIND MOST STABLE
-    const stableGesture = Object.keys(counts).reduce((a, b) =>
-      counts[a] > counts[b] ? a : b
-    );
+// MediaPipe Setup
+let hands;
+let camera;
 
-    // 📊 CONFIDENCE
-    const confidence = Math.round((counts[stableGesture] / gestureBuffer.length) * 100);
-    confidenceEl.innerText = "Confidence: " + confidence + "%";
+async function setupMediaPipe() {
+    if (!videoElement || !canvasElement) return;
 
-    // ✅ UPDATE OUTPUT
-    if (stableGesture !== lastGesture && stableGesture !== "...") {
-      lastGesture = stableGesture;
-            output.style.opacity = 0;
+    try {
+        hands = new Hands({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }
+        });
 
-      setTimeout(() => {
-        output.innerText = stableGesture;
-        output.style.opacity = 1;
-      }, 150);
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
+        });
 
-      // 🔊 AUTO SPEAK
-      if (stableGesture !== lastSpoken) {
-        speechSynthesis.cancel();
-        speechSynthesis.speak(new SpeechSynthesisUtterance(stableGesture));
-        lastSpoken = stableGesture;
-      }
+        hands.onResults(onResults);
+
+        camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480
+        });
+
+        camera.start();
+        trackerStatus.innerText = "System Online";
+        statusDot.style.animation = "none";
+        statusDot.style.opacity = "1";
+    } catch (e) {
+        console.error(e);
+        trackerStatus.innerText = "Error Initializing";
+        statusDot.classList.add('error');
     }
+}
 
-  } else {
-    // 🚫 NO HAND
-    statusEl.innerText = "● No Hand";
-    statusEl.style.color = "#ef4444";
+// Prediction buffer and stabilization
+const gestureBuffer = [];
+const BUFFER_SIZE = 10;
+let stableGesture = "";
+let ttsEnabled = true;
 
-    output.innerText = "No Hand Detected";
-    confidenceEl.innerText = "";
-    gestureBuffer = [];
-  }
+const ttsBtn = document.getElementById('tts-toggle');
+if (ttsBtn) {
+    ttsBtn.addEventListener('click', () => {
+        ttsEnabled = !ttsEnabled;
+        ttsBtn.innerText = ttsEnabled ? "TTS: ON" : "TTS: OFF";
+        ttsBtn.classList.toggle('active', ttsEnabled);
+    });
+}
+
+const resetBtn = document.getElementById('reset-btn');
+if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+        gestureBuffer.length = 0;
+        stableGesture = "";
+        gestureOutput.innerText = "AWAITING HAND...";
+        confidenceScore.innerText = "0%";
+        window.speechSynthesis.cancel();
+    });
+}
+
+function speakGesture(text) {
+    if (!ttsEnabled || text === "UNKNOWN" || text === "No Hand Detected") return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.volume = 1;
+    utterance.pitch = 1;
+    utterance.rate = 1;
+    window.speechSynthesis.speak(utterance);
+}
+
+function setGesture(text, conf) {
+    gestureOutput.innerText = text;
+    setConfidence(conf);
+}
+
+function setConfidence(conf) {
+    confidenceScore.innerText = `${conf}%`;
+    if (conf > 75) {
+        confidenceScore.style.color = 'var(--neon-green)';
+    } else if (conf > 40) {
+        confidenceScore.style.color = '#eab308'; // yellow
+    } else {
+        confidenceScore.style.color = '#ef4444'; // red
+    }
+}
+
+function updatePrediction(newGesture) {
+    if (newGesture) {
+        gestureBuffer.push(newGesture);
+    } else {
+        gestureBuffer.length = 0; // Clear buffer
+        if (stableGesture !== "") {
+            stableGesture = "";
+            setGesture("No Hand Detected", 0);
+        }
+        return;
+    }
+    
+    if (gestureBuffer.length > BUFFER_SIZE) {
+        gestureBuffer.shift();
+    }
+    
+    // Majority voting
+    const counts = {};
+    let dominantGesture = newGesture;
+    let maxCount = 0;
+    
+    for (const g of gestureBuffer) {
+        if (g === "UNKNOWN") continue;
+        counts[g] = (counts[g] || 0) + 1;
+        if (counts[g] > maxCount) {
+            maxCount = counts[g];
+            dominantGesture = g;
+        }
+    }
+    
+    const activeLength = gestureBuffer.filter(g => g !== "UNKNOWN").length;
+    let conf = 0;
+    if (activeLength > 0) {
+        conf = Math.round((maxCount / activeLength) * 100);
+    }
+    
+    if (activeLength >= BUFFER_SIZE / 2 && conf > 50 && dominantGesture !== stableGesture) {
+        stableGesture = dominantGesture;
+        setGesture(stableGesture, conf);
+        speakGesture(stableGesture);
+    } else if (stableGesture && dominantGesture === stableGesture) {
+        setConfidence(conf);
+    }
+}
+
+const isFingerExtended = (landmarks, tipIdx, pipIdx) => {
+    return landmarks[tipIdx].y < landmarks[pipIdx].y;
+}
+
+const getGesture = (landmarks) => {
+    const indexExt = isFingerExtended(landmarks, 8, 6);
+    const middleExt = isFingerExtended(landmarks, 12, 10);
+    const ringExt = isFingerExtended(landmarks, 16, 14);
+    const pinkyExt = isFingerExtended(landmarks, 20, 18);
+    
+    const thumbUp = landmarks[4].y < landmarks[5].y && landmarks[4].y < landmarks[3].y;
+    
+    if (indexExt && middleExt && ringExt && pinkyExt) {
+        return "HELLO"; // Open palm
+    } else if (indexExt && middleExt && !ringExt && !pinkyExt) {
+        return "TWO"; // Index and middle up
+    } else if (indexExt && !middleExt && !ringExt && !pinkyExt) {
+        return "ONE"; // Index up
+    } else if (!indexExt && !middleExt && !ringExt && !pinkyExt) {
+        if (thumbUp) {
+            return "YES"; // Thumbs up
+        } else {
+            return "NO"; // Closed fist
+        }
+    }
+    
+    return "UNKNOWN";
+}
+
+function resizeCanvas() {
+    if (videoElement && canvasElement) {
+        if (canvasElement.width !== videoElement.videoWidth && videoElement.videoWidth > 0) {
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+        }
+    }
+}
+
+function onResults(results) {
+    if (!canvasCtx) return;
+    resizeCanvas();
+    if (canvasElement.width === 0 || canvasElement.height === 0) return;
+
+    canvasCtx.save();
+    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    
+    // Draw the mirrored video frame on the canvas instead of directly displaying the video element
+    canvasCtx.translate(canvasElement.width, 0);
+    canvasCtx.scale(-1, 1);
+    canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const landmarks = results.multiHandLandmarks[0];
+        for (const ls of results.multiHandLandmarks) {
+            drawConnectors(canvasCtx, ls, HAND_CONNECTIONS, {color: '#22c55e', lineWidth: 4});
+            drawLandmarks(canvasCtx, ls, {color: '#ffffff', lineWidth: 2, radius: 3});
+        }
+        const detectedGesture = getGesture(landmarks);
+        updatePrediction(detectedGesture);
+    } else {
+        updatePrediction(null);
+    }
+    
+    canvasCtx.restore();
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+    if (document.getElementById('input-video')) {
+        setupMediaPipe();
+    }
 });
-
-// 🎥 CAMERA LOOP
-const camera = new Camera(video, {
-  onFrame: async () => {
-    await hands.send({ image: video });
-  },
-  width: 420,
-  height: 280
-});
-
-camera.start();
-
-// 🔊 MANUAL SPEAK
-function speak() {
-  const text = output.innerText;
-  speechSynthesis.cancel();
-  speechSynthesis.speak(new SpeechSynthesisUtterance(text));
-}
-
-// ⏸ PAUSE
-function pauseCam() {
-  if (video.srcObject) {
-    video.srcObject.getTracks().forEach(track => track.stop());
-    statusEl.innerText = "● Paused";
-    statusEl.style.color = "#facc15";
-  }
-}
-
-// 🔄 RESET
-function resetText() {
-  output.innerText = "...";
-  confidenceEl.innerText = "";
-  gestureBuffer = [];
-  lastGesture = "...";
-}
-
-// ✨ PARTICLES
-const pCanvas = document.getElementById("particles");
-const pCtx = pCanvas.getContext("2d");
-
-pCanvas.width = window.innerWidth;
-pCanvas.height = window.innerHeight;
-
-let particles = [];
-
-for (let i = 0; i < 80; i++) {
-  particles.push({
-    x: Math.random() * pCanvas.width,
-    y: Math.random() * pCanvas.height,
-    radius: Math.random() * 2,
-    dx: (Math.random() - 0.5) * 0.5,
-    dy: (Math.random() - 0.5) * 0.5
-  });
-}
-
-function animateParticles() {
-  pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
-
-  particles.forEach(p => {
-    p.x += p.dx;
-    p.y += p.dy;
-
-    pCtx.beginPath();
-    pCtx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-    pCtx.fillStyle = "rgba(34,197,94,0.5)";
-    pCtx.fill();
-  });
-
-  requestAnimationFrame(animateParticles);
-}
-
-animateParticles();
-
-// ℹ️ MODAL
-function openModal() {
-  document.getElementById("modal").classList.remove("hidden");
-}
-
-function closeModal() {
-  document.getElementById("modal").classList.add("hidden");
-}
-window.onload = () => {
-  setTimeout(() => {
-    openModal();
-  }, 800);
-};

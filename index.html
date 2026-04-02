@@ -1,76 +1,104 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Signova</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <!-- Fonts -->
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
-
-  <link rel="stylesheet" href="style.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signova</title>
+    <!-- Google Fonts: Orbitron & Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <canvas id="particles-bg"></canvas>
+    
+    <div class="landing-container">
+        <div class="glass-panel text-center pulse-glow">
+            <h1 class="orbitron neon-text title-large">SIGNOVA</h1>
+            <p class="subtitle mb-6 text-gray-300">Real-Time Sign Language Translation via Computer Vision</p>
+            
+            <div class="features-grid mb-8 text-left">
+                <div class="feature-item">
+                    <span class="neon-icon">⏺</span> Client-Side Processing
+                </div>
+                <div class="feature-item">
+                    <span class="neon-icon">⚡</span> Zero Latency
+                </div>
+                <div class="feature-item">
+                    <span class="neon-icon">🗣️</span> Voice Output
+                </div>
+                <div class="feature-item">
+                    <span class="neon-icon">✋</span> 21-Point Tracking
+                </div>
+            </div>
 
-  <!-- 🌌 NAVBAR -->
-  <nav class="navbar">
-    <div class="logo">Sign<span>ova</span></div>
-
-    <ul class="nav-links">
-      <li><a href="#">Home</a></li>
-      <li><a href="translate.html">Translate</a></li>
-      <li><a href="instructions.html">Instructions</a></li>
-      <li><a href="about.html">About</a></li>
-    </ul>
-
-    <a href="translate.html" class="start-btn">Start →</a>
-  </nav>
-
-  <!-- ⚡ HERO -->
-  <section class="hero">
-    <div class="hero-left">
-      <h1>
-        Bridging Silence <br />
-        <span>and Speech</span>
-      </h1>
-
-      <p>
-        Real-time sign language translation directly in your browser.
-        No install. No delay.
-      </p>
-
-      <a href="translate.html" class="cta-btn">
-        Start Translating →
-      </a>
+            <a href="translate.html" class="cyber-btn mt-6">
+                <span>INITIALIZE SYSTEM</span>
+            </a>
+        </div>
     </div>
 
-    <div class="hero-right">
-      <div class="camera-box">
-        <div class="glow"></div>
-        <p>Live AI Preview</p>
-      </div>
-    </div>
-  </section>
+    <!-- Particle Background Script -->
+    <script>
+        const canvas = document.getElementById('particles-bg');
+        const ctx = canvas.getContext('2d');
+        let particlesArray;
 
-  <!-- 🧊 FEATURES -->
-  <section class="features">
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
 
-    <div class="card">
-      <h3>⚡ Real-time Detection</h3>
-      <p>Instant gesture recognition powered by AI</p>
-    </div>
+        class Particle {
+            constructor(x, y, directionX, directionY, size, color) {
+                this.x = x;
+                this.y = y;
+                this.directionX = directionX;
+                this.directionY = directionY;
+                this.size = size;
+                this.color = color;
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2, false);
+                ctx.fillStyle = '#22c55e';
+                ctx.fill();
+            }
+            update() {
+                if (this.x > canvas.width || this.x < 0) this.directionX = -this.directionX;
+                if (this.y > canvas.height || this.y < 0) this.directionY = -this.directionY;
+                this.x += this.directionX;
+                this.y += this.directionY;
+                this.draw();
+            }
+        }
 
-    <div class="card">
-      <h3>🔊 Voice Output</h3>
-      <p>Convert gestures into natural speech</p>
-    </div>
+        function init() {
+            particlesArray = [];
+            let numberOfParticles = (canvas.height * canvas.width) / 20000;
+            for (let i = 0; i < numberOfParticles; i++) {
+                let size = (Math.random() * 2) + 1;
+                let x = (Math.random() * ((innerWidth - size * 2) - (size * 2)) + size * 2);
+                let y = (Math.random() * ((innerHeight - size * 2) - (size * 2)) + size * 2);
+                let directionX = (Math.random() * 1) - 0.5;
+                let directionY = (Math.random() * 1) - 0.5;
+                let color = '#22c55e';
+                particlesArray.push(new Particle(x, y, directionX, directionY, size, color));
+            }
+        }
 
-    <div class="card">
-      <h3>🌐 No Installation</h3>
-      <p>Runs directly in your browser seamlessly</p>
-    </div>
+        function animate() {
+            requestAnimationFrame(animate);
+            ctx.clearRect(0, 0, innerWidth, innerHeight);
+            for (let i = 0; i < particlesArray.length; i++) {
+                particlesArray[i].update();
+            }
+        }
+        init();
+        animate();
 
-  </section>
-
+        window.addEventListener('resize', () => {
+            canvas.width = innerWidth;
+            canvas.height = innerHeight;
+            init();
+        });
+    </script>
 </body>
 </html>

@@ -1,98 +1,96 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Signova Live</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <!-- Fonts -->
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
-  <!-- MediaPipe -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-
-  <link rel="stylesheet" href="translate.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signova Live Translator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="translate.css">
+    
+    <!-- MediaPipe Utilities -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 </head>
 <body>
+    <canvas id="particles-bg"></canvas>
 
-  <canvas id="particles"></canvas>
+    <div class="app-layout">
+        <!-- Top Bar -->
+        <header class="top-bar glass-panel">
+            <div class="logo">
+                <span class="orbitron neon-text">SIGNOVA LIVE</span>
+            </div>
+            <div class="status-indicator">
+                <div class="status-dot" id="system-dot"></div>
+                <span id="tracker-status">Initializing System...</span>
+            </div>
+            <div class="top-controls">
+                <button id="info-btn" class="icon-btn" title="System Info">ℹ️</button>
+                <a href="index.html" class="icon-btn exit-btn" title="Exit">⏹</a>
+            </div>
+        </header>
 
-  <!-- 🔝 TOP BAR -->
-  <div class="topbar">
-    <div class="logo">Sign<span>ova</span> Live</div>
-    <div class="status">● Camera Active</div>
-    <a href="index.html" class="exit-btn">Exit</a>
-    <button class="info-btn" onclick="openModal()">ℹ</button>
-  </div>
+        <!-- Main Feeds -->
+        <main class="feeds-container">
+            <!-- Local Feed (Webcam + Tracker) -->
+            <div class="feed-wrapper local-feed glass-panel">
+                <h3 class="orbitron feed-label">LOCAL CAM [TRACKING]</h3>
+                <div class="video-container">
+                    <video id="input-video" class="input-video" autoplay playsinline></video>
+                    <canvas id="output-canvas" class="output-canvas"></canvas>
+                </div>
+            </div>
 
-  <div id="modal" class="modal hidden">
-  <div class="modal-content">
+            <!-- Remote Dummy Feed -->
+            <div class="feed-wrapper remote-feed glass-panel">
+                <h3 class="orbitron feed-label">REMOTE FEED [SIMULATED]</h3>
+                <div class="video-container simulated-user-bg">
+                    <div class="cyber-scanline"></div>
+                    <p class="simulated-text orbitron">WAITING FOR CONNECTION...</p>
+                </div>
+            </div>
+        </main>
 
-    <span class="close" onclick="closeModal()">✕</span>
-
-    <h2>SIGNOVA_PROTOCOL</h2>
-    <p class="sub">Real-Time Gesture Translation Interface</p>
-
-    <div class="modal-card">
-      📷 Allow camera access to initiate live hand tracking using 21-point landmark detection
+        <!-- Bottom Output & Controls -->
+        <footer class="bottom-console glass-panel">
+            <div class="output-display">
+                <div class="output-label orbitron">TRANSLATED OUTPUT:</div>
+                <div id="gesture-output" class="neon-text orbitron output-text">AWAITING HAND...</div>
+                <div class="confidence-meter">
+                    <span>CONFIDENCE: </span><span id="confidence-score" class="neon-text">0%</span>
+                </div>
+            </div>
+            <div class="console-controls flex-gap">
+                <button id="reset-btn" class="cyber-btn small-btn">RESET</button>
+                <button id="tts-toggle" class="cyber-btn small-btn active">TTS: ON</button>
+            </div>
+        </footer>
     </div>
 
-    <div class="modal-card">
-      🖐 Perform supported gestures (HELLO, YES, NO, ONE, TWO) within the camera frame
+    <!-- Info Modal -->
+    <div id="info-modal" class="cyber-modal hidden">
+        <div class="modal-content glass-panel">
+            <h2 class="orbitron neon-text">SIGNOVA v1.0</h2>
+            <div class="modal-body">
+                <p><strong>System Architecture:</strong> Client-side MediaPipe Hands processing.</p>
+                <p><strong>Gesture Detection:</strong> Rule-based topological analysis.</p>
+                <p><strong>Stabilization:</strong> 10-frame buffer with majority voting algorithm.</p>
+                <p><strong>Supported Gestures:</strong></p>
+                <ul>
+                    <li>Thumbs up &rarr; "YES"</li>
+                    <li>Closed fist &rarr; "NO"</li>
+                    <li>Open palm &rarr; "HELLO"</li>
+                    <li>Index finger up &rarr; "ONE"</li>
+                    <li>Index + middle &rarr; "TWO"</li>
+                </ul>
+            </div>
+            <button id="close-modal" class="cyber-btn mt-6">ACKNOWLEDGE</button>
+        </div>
     </div>
 
-    <div class="modal-card">
-      🧠 System stabilizes predictions using frame buffering to eliminate flicker
-    </div>
-
-    <div class="modal-card">
-      🔤 Detected gestures are converted into text output in real-time
-    </div>
-
-    <div class="modal-card">
-      🔊 Audio feedback is automatically generated using speech synthesis
-    </div>
-
-    <div class="modal-card">
-      ⚡ Entire pipeline runs locally in-browser for low-latency performance
-    </div>
-
-    <button class="ack-btn" onclick="closeModal()">INITIALIZE</button>
-
-  </div>
-</div>
-
-  <!-- 🎬 MAIN SECTION -->
-  <div class="main">
-
-    <!-- LEFT: YOUR CAMERA -->
-    <div class="video-box">
-      <video id="video" autoplay playsinline></video>
-      <canvas id="canvas"></canvas>
-      <span class="label">You</span>
-    </div>
-
-    <!-- RIGHT: FAKE CALL -->
-    <div class="video-box">
-      <video src="https://www.w3schools.com/html/mov_bbb.mp4" autoplay loop muted></video>
-      <span class="label">Remote User</span>
-    </div>
-
-  </div>
-
-  <!-- 🔤 OUTPUT -->
-  <div class="output" id="output">...</div>
-
-  <div class="confidence" id="confidence"></div>
-
-  <!-- 🎛 CONTROLS -->
-  <div class="controls">
-    <button onclick="speak()">🔊 Speak</button>
-    <button onclick="pauseCam()">⏸ Pause</button>
-    <button onclick="resetText()">🔄 Reset</button>
-  </div>
-
-  <script src="app.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
