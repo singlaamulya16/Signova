@@ -181,3 +181,18 @@ border: 1px solid rgba(34, 197, 94, 0.2);
   50% { opacity: 1; }
   100% { opacity: 0.6; }
 }
+
+.info-btn {
+  background: transparent;
+  border: 1px solid rgba(34,197,94,0.4);
+  color: #22c55e;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+.info-btn:hover {
+  box-shadow: 0 0 15px #22c55e;
+  transform: scale(1.1);
+}
