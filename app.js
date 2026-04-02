@@ -49,14 +49,34 @@ if (infoBtn && closeModalBtn && infoModal) {
     closeModalBtn.addEventListener('click', () => infoModal.classList.add('hidden'));
 }
 
+// Phrase Sequence Tracking
+const PHRASE_WINDOW_MS = 4000;
+const gestureSequence = { Left: [], Right: [] };
+let activePhraseTimer = { Left: null, Right: null };
+
+const PHRASE_MAP = {
+    "I,LOVE,YOU": "I love you",
+    "MY,NAME": "My name is...",
+    "I,HAPPY": "I am happy!",
+    "GOOD,BYE": "Goodbye!",
+    "THANK,YOU": "Thank you!"
+};
+
 // Prediction Buffer State
 const BUFFER_SIZE = 10;
 const buffers = { Left: [], Right: [] };
 const stableGestures = { Left: "", Right: "" };
 
-function setHandOutput(handStr, text) {
+function setHandOutput(handStr, text, isPhrase = false) {
     const el = handStr === 'Left' ? leftHandOutput : rightHandOutput;
-    if (el) el.innerText = text;
+    if (el) {
+        el.innerText = text;
+        if (isPhrase) {
+            el.classList.add('phrase-mode');
+        } else {
+            el.classList.remove('phrase-mode');
+        }
+    }
 }
 
 function updatePrediction(handStr, newGesture) {
@@ -92,12 +112,58 @@ function updatePrediction(handStr, newGesture) {
 
     if (activeLength >= BUFFER_SIZE / 2 && conf > 50 && dominant !== stableGestures[handStr]) {
         stableGestures[handStr] = dominant;
-        setHandOutput(handStr, dominant);
         
-        if (toggleSignVoice && toggleSignVoice.checked && dominant !== "UNKNOWN") {
-            speakText(dominant);
-            // Append gesture event directly into chat stream
-            addChatMessage('me', `[Signed]: ${dominant}`);
+        // --- Sequence Tracker ---
+        const now = Date.now();
+        const seq = gestureSequence[handStr];
+        
+        // Remove sequences older than window
+        while (seq.length > 0 && now - seq[0].time > PHRASE_WINDOW_MS) {
+            seq.shift();
+        }
+        
+        // Prevent duplicate consecutive entries to sequence 
+        if (seq.length === 0 || seq[seq.length - 1].gesture !== dominant) {
+            seq.push({ gesture: dominant, time: now });
+        }
+        
+        // Search for phrase match incrementally backwards
+        let foundPhrase = null;
+        for (let idx = 0; idx < seq.length; idx++) {
+            const suffixStr = seq.slice(idx).map(item => item.gesture).join(',');
+            if (PHRASE_MAP[suffixStr]) {
+                foundPhrase = PHRASE_MAP[suffixStr];
+                break;
+            }
+        }
+        
+        if (foundPhrase) {
+            setHandOutput(handStr, foundPhrase, true);
+            seq.length = 0; // flush sequence on phrase trigger
+            
+            if (toggleSignVoice && toggleSignVoice.checked) {
+                speakText(foundPhrase);
+                addChatMessage('me', `[Signed Phrase]: ${foundPhrase}`);
+            }
+            
+            // clear phrase highlight after a delay
+            clearTimeout(activePhraseTimer[handStr]);
+            activePhraseTimer[handStr] = setTimeout(() => {
+                if (stableGestures[handStr] !== "") {
+                    setHandOutput(handStr, stableGestures[handStr], false);
+                } else {
+                    setHandOutput(handStr, "--", false);
+                }
+            }, 3000);
+            
+        } else {
+            setHandOutput(handStr, dominant, false);
+            clearTimeout(activePhraseTimer[handStr]);
+            
+            if (toggleSignVoice && toggleSignVoice.checked && dominant !== "UNKNOWN") {
+                speakText(dominant);
+                addChatMessage('me', `[Signed]: ${dominant}`);
+            }
         }
     }
 }
@@ -149,6 +215,8 @@ function resizeCanvas() {
     }
 }
 
+const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+
 const isFingerExtended = (landmarks, tipIdx, pipIdx) => landmarks[tipIdx].y < landmarks[pipIdx].y;
 
 const getGesture = (landmarks, handedness) => {
@@ -164,27 +232,43 @@ const getGesture = (landmarks, handedness) => {
         thumbExtended = landmarks[4].x > landmarks[5].x + 0.05;
     }
     
-    const thumbUp = landmarks[4].y < landmarks[5].y && landmarks[4].y < landmarks[3].y;
+    const thumbUp = landmarks[4].y < landmarks[5].y && landmarks[4].y < landmarks[3].y && landmarks[4].y < landmarks[8].y && !indexExt && !middleExt;
+    const thumbDown = landmarks[4].y > landmarks[5].y && landmarks[4].y > landmarks[3].y && landmarks[4].y > landmarks[8].y && !indexExt && !middleExt;
+    
+    const indexMiddleDist = dist(landmarks[8], landmarks[12]);
+    const thumbIndexDist = dist(landmarks[4], landmarks[8]);
+    
+    if (thumbIndexDist < 0.05 && middleExt && ringExt && pinkyExt) {
+        return "THANK"; // 'F' / 'OK' sign used for THANK
+    }
     
     if (indexExt && middleExt && ringExt && pinkyExt) {
-        if (!thumbExtended) return "B"; 
-        return "HELLO";
-    } else if (indexExt && middleExt && !ringExt && !pinkyExt) {
-        return "V"; 
+        if (thumbExtended) return "BYE"; // open hand with thumb
+        return "B"; 
     } else if (indexExt && middleExt && ringExt && !pinkyExt) {
-        return "W";
+        return "HAPPY"; // 'W' shape
+    } else if (indexExt && middleExt && !ringExt && !pinkyExt) {
+        if (indexMiddleDist < 0.04) return "NAME"; // 'U' / 'H' shape
+        return "V"; 
     } else if (indexExt && !middleExt && !ringExt && !pinkyExt) {
         if (thumbExtended) return "L"; 
-        return "ONE";
+        return "YOU"; // Index only
     } else if (indexExt && !middleExt && !ringExt && pinkyExt) {
+        if (thumbExtended) return "LOVE"; // ILY sign
         return "ROCK";
     } else if (!indexExt && !middleExt && !ringExt && pinkyExt) {
-        if (thumbExtended) return "Y";
+        if (thumbExtended) return "MY"; // Y shape
         return "I";
     } else if (!indexExt && !middleExt && !ringExt && !pinkyExt) {
-        if (thumbUp) return "YES";
+        if (thumbUp) return "GOOD";
+        if (thumbDown) return "BAD";
         if (thumbExtended) return "A";
-        return "NO"; 
+        
+        // Approximate 'C' shape detection
+        const isC_shape = (thumbIndexDist > 0.05 && thumbIndexDist < 0.2) && landmarks[8].y > landmarks[6].y && landmarks[12].y > landmarks[10].y;
+        if (isC_shape) return "C";
+        
+        return "NO"; // closed fist
     }
     return "UNKNOWN";
 }

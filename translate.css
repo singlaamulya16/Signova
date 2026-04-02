@@ -89,7 +89,17 @@
 
 .hand-output { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; }
 .hand-label { font-size: 0.85rem; margin-bottom: 0.5rem; letter-spacing: 0.1em; }
-.result-text { font-size: 3rem; font-weight: 900; }
+.result-text { font-size: 3rem; font-weight: 900; transition: all 0.3s ease; }
+.result-text.phrase-mode {
+    font-size: 1.8rem;
+    color: #fbbf24;
+    text-shadow: 0 0 15px rgba(251, 191, 36, 0.6);
+    animation: pulse-glow 1.5s infinite alternate;
+}
+@keyframes pulse-glow {
+    from { text-shadow: 0 0 10px rgba(251, 191, 36, 0.4); }
+    to { text-shadow: 0 0 25px rgba(251, 191, 36, 0.9); }
+}
 .border-left { border-left: 1px solid var(--glass-border); width: 1px; height: 60px; }
 
 /* Right Side: Remote Video & Chat */
