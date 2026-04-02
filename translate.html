@@ -22,7 +22,7 @@
 
     <div class="app-layout">
         <!-- Top Bar -->
-        <header class="top-bar glass-panel">
+        <header class="top-bar glass-panel flex-gap justify-between">
             <div class="logo">
                 <span class="orbitron neon-text"><i data-lucide="radio"></i> SIGNOVA COMMLINK</span>
             </div>
@@ -37,88 +37,89 @@
 
         <!-- Main Workspace -->
         <main class="workspace-container">
-            <!-- Left Column: Video & Gestures -->
-            <div class="left-col">
-                <div class="video-wrapper glass-panel">
-                    <h3 class="orbitron feed-label"><i data-lucide="video"></i> LOCAL CAM</h3>
-                    <div class="video-container">
-                        <video id="input-video" class="input-video" autoplay playsinline></video>
-                        <canvas id="output-canvas" class="output-canvas"></canvas>
-                    </div>
+            <!-- Left Side: Local Cam & Sign Output -->
+            <div class="split-side left-side">
+                <div class="video-container main-video glass-panel p-1">
+                    <video id="input-video" class="input-video" autoplay playsinline></video>
+                    <canvas id="output-canvas" class="output-canvas"></canvas>
+                    <div class="video-badge orbitron"><i data-lucide="video" class="sm-icon"></i> LOCAL</div>
                 </div>
                 
-                <div class="translation-wrapper glass-panel">
-                    <h3 class="orbitron feed-label"><i data-lucide="hand"></i> GESTURE OUTPUT</h3>
-                    <div class="hands-output-container">
-                        <div class="hand-state">
-                            <div class="hand-label text-gray-300">LEFT HAND</div>
-                            <div id="left-hand-output" class="orbitron neon-text result-text">--</div>
-                        </div>
-                        <div class="hand-state border-left">
-                            <div class="hand-label text-gray-300">RIGHT HAND</div>
-                            <div id="right-hand-output" class="orbitron neon-text result-text">--</div>
-                        </div>
+                <div class="gesture-output-panel">
+                    <div class="hand-output">
+                        <div class="hand-label text-gray-300 orbitron">LEFT HAND</div>
+                        <div id="left-hand-output" class="orbitron neon-text result-text">--</div>
+                    </div>
+                    <div class="border-left"></div>
+                    <div class="hand-output">
+                        <div class="hand-label text-gray-300 orbitron">RIGHT HAND</div>
+                        <div id="right-hand-output" class="orbitron neon-text result-text">--</div>
                     </div>
                 </div>
             </div>
 
-            <!-- Center Column: Comms & Chat -->
-            <div class="mid-col glass-panel flex-col">
-                <div class="stt-wrapper">
-                    <h3 class="orbitron feed-label"><i data-lucide="mic"></i> VOICE TRANSCRIPT</h3>
-                    <div class="stt-box">
-                        <p id="stt-output" class="text-gray-300 stt-text">Microphone standby...</p>
+            <!-- Right Side: Remote Cam & Chat Module -->
+            <div class="split-side right-side" id="right-panel">
+                <div class="remote-video-container video-container glass-panel p-1" id="remote-video">
+                    <div class="cyber-scanline"></div>
+                    <div class="simulated-user-bg">
+                        <p class="simulated-text orbitron">WAITING FOR CONNECTION...</p>
                     </div>
+                    <div class="video-badge orbitron"><i data-lucide="monitor" class="sm-icon"></i> REMOTE</div>
                 </div>
 
-                <div class="chat-wrapper flex-col">
-                    <h3 class="orbitron feed-label"><i data-lucide="message-square"></i> CHAT STREAM</h3>
+                <div class="chat-container glass-panel">
+                    <div class="chat-header">
+                        <span class="orbitron neon-text flex-gap-sm"><i data-lucide="message-square"></i> COMMS STREAM</span>
+                        <div class="chat-actions">
+                            <button id="expand-chat-btn" class="icon-btn action-icon" title="Expand Chat"><i data-lucide="maximize-2"></i></button>
+                        </div>
+                    </div>
+                    
                     <div class="chat-history" id="chat-history">
                         <div class="chat-message system">Secure channel established.</div>
                     </div>
                     
                     <div class="chat-input-area">
-                        <input type="text" id="chat-input" class="cyber-input" placeholder="Type a message...">
-                        <button id="speak-btn" class="cyber-btn action-btn text-sm" title="Send & Speak text"><i data-lucide="volume-2"></i></button>
-                        <button id="send-btn" class="cyber-btn action-btn text-sm" title="Send text"><i data-lucide="send"></i></button>
+                        <input type="text" id="chat-input" class="cyber-input" placeholder="Type message to speak...">
+                        <button id="speak-btn" class="cyber-btn action-btn text-sm" title="Speak Text"><i data-lucide="volume-2"></i></button>
+                        <button id="send-btn" class="cyber-btn action-btn text-sm" title="Send Text"><i data-lucide="send"></i></button>
                     </div>
                 </div>
             </div>
-
-            <!-- Right Column/Control Center -->
-            <div class="right-col glass-panel flex-col">
-                <h3 class="orbitron feed-label mb-6"><i data-lucide="settings"></i> CONTROLS</h3>
-                
-                <div class="controls-list flex-col">
-                    <label class="cyber-toggle">
-                        <span class="toggle-label text-gray-300">Sign &rarr; Voice</span>
-                        <div class="toggle-switch">
-                            <input type="checkbox" id="toggle-sign-voice" checked>
-                            <span class="slider"></span>
-                        </div>
-                    </label>
-
-                    <label class="cyber-toggle mt-6">
-                        <span class="toggle-label text-gray-300">Voice &rarr; Text</span>
-                        <div class="toggle-switch">
-                            <input type="checkbox" id="toggle-voice-text" checked>
-                            <span class="slider"></span>
-                        </div>
-                    </label>
-                </div>
-
-                <div class="spacer"></div>
-                
-                <button id="clear-btn" class="cyber-btn control-btn mb-6 width-100"><i data-lucide="trash-2"></i> CLEAR CHAT</button>
-                <a href="index.html" id="end-call-btn" class="cyber-btn control-btn end-btn width-100"><i data-lucide="phone-off"></i> END SESSION</a>
-            </div>
         </main>
+
+        <!-- Bottom Controls -->
+        <footer class="bottom-bar glass-panel flex-gap justify-between">
+            <div class="toggles flex-gap">
+                <label class="cyber-toggle">
+                    <span class="toggle-label text-gray-300">Sign &rarr; Voice</span>
+                    <div class="toggle-switch">
+                        <input type="checkbox" id="toggle-sign-voice" checked>
+                        <span class="slider"></span>
+                    </div>
+                </label>
+                <div class="vertical-divider"></div>
+                <label class="cyber-toggle">
+                    <span class="toggle-label text-gray-300">Voice &rarr; Text</span>
+                    <div class="toggle-switch">
+                        <input type="checkbox" id="toggle-voice-text" checked>
+                        <span class="slider"></span>
+                    </div>
+                </label>
+            </div>
+            
+            <div class="control-actions flex-gap">
+                <button id="clear-btn" class="cyber-btn control-btn"><i data-lucide="trash-2"></i> CLEAR CHAT</button>
+                <a href="index.html" id="end-call-btn" class="cyber-btn control-btn end-btn"><i data-lucide="phone-off"></i> END CALL</a>
+            </div>
+        </footer>
     </div>
 
     <!-- Info Modal -->
     <div id="info-modal" class="cyber-modal hidden">
         <div class="modal-content glass-panel">
-            <h2 class="orbitron neon-text">SIGNOVA v2.0</h2>
+            <h2 class="orbitron neon-text">SIGNOVA v3.0</h2>
             <div class="modal-body">
                 <p><strong>System Architecture:</strong> Multi-modal real-time assistive app.</p>
                 <p><strong>Tracking:</strong> Dual-hand topological analysis.</p>

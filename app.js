@@ -1,5 +1,5 @@
 // Signova App Logic
-console.log("Signova System Initialized");
+console.log("Signova System Active");
 
 // DOM Elements
 const videoElement = document.getElementById('input-video');
@@ -11,7 +11,6 @@ const trackerStatus = document.getElementById('tracker-status');
 const leftHandOutput = document.getElementById('left-hand-output');
 const rightHandOutput = document.getElementById('right-hand-output');
 
-const sttOutput = document.getElementById('stt-output');
 const chatHistory = document.getElementById('chat-history');
 const chatInput = document.getElementById('chat-input');
 const speakBtn = document.getElementById('speak-btn');
@@ -20,6 +19,25 @@ const clearBtn = document.getElementById('clear-btn');
 
 const toggleSignVoice = document.getElementById('toggle-sign-voice');
 const toggleVoiceText = document.getElementById('toggle-voice-text');
+
+// Chat Expansion Hook
+const rightPanel = document.getElementById('right-panel');
+const expandChatBtn = document.getElementById('expand-chat-btn');
+let isChatExpanded = false;
+
+if (expandChatBtn && rightPanel) {
+    expandChatBtn.addEventListener('click', () => {
+        isChatExpanded = !isChatExpanded;
+        if (isChatExpanded) {
+            rightPanel.classList.add('chat-expanded');
+            expandChatBtn.innerHTML = '<i data-lucide="minimize-2"></i>';
+        } else {
+            rightPanel.classList.remove('chat-expanded');
+            expandChatBtn.innerHTML = '<i data-lucide="maximize-2"></i>';
+        }
+        lucide.createIcons();
+    });
+}
 
 // Modal Logic
 const infoBtn = document.getElementById('info-btn');
@@ -76,10 +94,10 @@ function updatePrediction(handStr, newGesture) {
         stableGestures[handStr] = dominant;
         setHandOutput(handStr, dominant);
         
-        // Output sign to voice + chat if enabled
         if (toggleSignVoice && toggleSignVoice.checked && dominant !== "UNKNOWN") {
             speakText(dominant);
-            addChatMessage('me', `[Gesture]: ${dominant}`);
+            // Append gesture event directly into chat stream
+            addChatMessage('me', `[Signed]: ${dominant}`);
         }
     }
 }
@@ -96,7 +114,6 @@ async function setupMediaPipe() {
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
 
-        // Track up to 2 hands for advanced comms
         hands.setOptions({
             maxNumHands: 2,
             modelComplexity: 1,
@@ -118,7 +135,7 @@ async function setupMediaPipe() {
         statusDot.style.opacity = "1";
     } catch (e) {
         console.error(e);
-        trackerStatus.innerText = "Error Initializing";
+        trackerStatus.innerText = "Camera Error";
         statusDot.classList.add('error');
     }
 }
@@ -140,7 +157,6 @@ const getGesture = (landmarks, handedness) => {
     const ringExt = isFingerExtended(landmarks, 16, 14);
     const pinkyExt = isFingerExtended(landmarks, 20, 18);
     
-    // Thumb heuristics
     let thumbExtended = false;
     if (handedness === 'Left') {
         thumbExtended = landmarks[4].x < landmarks[5].x - 0.05; 
@@ -190,7 +206,7 @@ function onResults(results) {
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         for (let i = 0; i < results.multiHandLandmarks.length; i++) {
             const landmarks = results.multiHandLandmarks[i];
-            const handLabel = results.multiHandedness[i].label; // Left or Right
+            const handLabel = results.multiHandedness[i].label; 
             
             drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#22c55e', lineWidth: 4});
             drawLandmarks(canvasCtx, landmarks, {color: '#ffffff', lineWidth: 2, radius: 3});
@@ -207,9 +223,28 @@ function onResults(results) {
     canvasCtx.restore();
 }
 
-// Communication Logic: STT, TTS, Chat
+// Communication Logic: Unified Stream (STT + User Chat + System messages)
 let speechRecognition;
 let isListening = false;
+let interimMsg = null;
+
+function showInterim(text) {
+    if (!chatHistory) return;
+    if (!interimMsg) {
+        interimMsg = document.createElement('div');
+        interimMsg.className = 'chat-message system hidden';
+        chatHistory.appendChild(interimMsg);
+    }
+    if (text) {
+        interimMsg.innerHTML = `<i data-lucide="mic" class="sm-icon"></i> ${text}`;
+        interimMsg.classList.remove('hidden');
+        chatHistory.appendChild(interimMsg); // Append forces it to the bottom
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+        if(window.lucide) lucide.createIcons();
+    } else {
+        interimMsg.classList.add('hidden');
+    }
+}
 
 if (window.SpeechRecognition || window.webkitSpeechRecognition) {
     const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -226,36 +261,23 @@ if (window.SpeechRecognition || window.webkitSpeechRecognition) {
         }
         
         if (final) {
-            addChatMessage('them', `[Voice]: ${final}`);
-            sttOutput.innerText = interim || "Listening...";
+            addChatMessage('voice', `[Transcription]: ${final}`);
+            showInterim(""); 
         } else {
-            sttOutput.innerText = interim || "Listening...";
-            if(interim) {
-                sttOutput.classList.add('neon-text');
-                sttOutput.classList.remove('text-gray-300');
-            }
+            showInterim(interim);
         }
     };
     
-    speechRecognition.onstart = () => {
-        sttOutput.innerText = "Listening...";
-        sttOutput.classList.add('pulse-glow');
-        sttOutput.classList.remove('text-gray-300');
-        sttOutput.classList.add('neon-text');
-    };
+    speechRecognition.onstart = () => showInterim("Standby for vocal input...");
     
     speechRecognition.onend = () => {
-        sttOutput.classList.remove('pulse-glow');
+        showInterim(""); 
         if (toggleVoiceText && toggleVoiceText.checked && isListening) {
             try { speechRecognition.start(); } catch(e) {}
-        } else {
-            sttOutput.innerText = "Microphone disabled.";
-            sttOutput.classList.add('text-gray-300');
-            sttOutput.classList.remove('neon-text');
         }
     };
 } else {
-    if (sttOutput) sttOutput.innerText = "Speech-to-Text not supported in this browser.";
+    showInterim("Speech Recognition not supported in this environment.");
 }
 
 function updateSTTState() {
@@ -283,6 +305,9 @@ function addChatMessage(sender, text) {
     msg.className = `chat-message ${sender}`;
     msg.innerText = text;
     chatHistory.appendChild(msg);
+    if(interimMsg && interimMsg.parentNode === chatHistory) {
+         chatHistory.appendChild(interimMsg); // Keep interim marker at end
+    }
     chatHistory.scrollTop = chatHistory.scrollHeight;
 }
 
@@ -303,15 +328,20 @@ if (sendBtn && chatInput) {
         if (msg) {
             addChatMessage('me', msg);
             chatInput.value = '';
-            // Auto response for aesthetic
-            setTimeout(() => addChatMessage('them', `Acknowledged.`), 1000);
+            setTimeout(() => addChatMessage('them', `User response simulated.`), 1000);
         }
     });
 }
 
 if (clearBtn) {
     clearBtn.addEventListener('click', () => {
-        if (chatHistory) chatHistory.innerHTML = '<div class="chat-message system">Secure channel re-established.</div>';
+        if (chatHistory) {
+            chatHistory.innerHTML = '<div class="chat-message system">Secure channel re-established.</div>';
+            interimMsg = null;
+            if(isListening && speechRecognition) {
+                showInterim("Standby for vocal input...");
+            }
+        }
         buffers.Left.length = 0;
         buffers.Right.length = 0;
         stableGestures.Left = "";
@@ -329,7 +359,6 @@ chatInput?.addEventListener('keypress', (e) => {
 window.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('input-video')) {
         setupMediaPipe();
-        // Delay to allow DOM initialization before starting STT
         setTimeout(() => updateSTTState(), 1000); 
     }
 });
