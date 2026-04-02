@@ -3,10 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Signova Live Translator</title>
+    <title>Signova Multi-Modal Communication</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="translate.css">
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
     
     <!-- MediaPipe Utilities -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -21,70 +24,111 @@
         <!-- Top Bar -->
         <header class="top-bar glass-panel">
             <div class="logo">
-                <span class="orbitron neon-text">SIGNOVA LIVE</span>
+                <span class="orbitron neon-text"><i data-lucide="radio"></i> SIGNOVA COMMLINK</span>
             </div>
             <div class="status-indicator">
                 <div class="status-dot" id="system-dot"></div>
                 <span id="tracker-status">Initializing System...</span>
             </div>
             <div class="top-controls">
-                <button id="info-btn" class="icon-btn" title="System Info">ℹ️</button>
-                <a href="index.html" class="icon-btn exit-btn" title="Exit">⏹</a>
+                <button id="info-btn" class="icon-btn" title="System Info"><i data-lucide="info"></i></button>
             </div>
         </header>
 
-        <!-- Main Feeds -->
-        <main class="feeds-container">
-            <!-- Local Feed (Webcam + Tracker) -->
-            <div class="feed-wrapper local-feed glass-panel">
-                <h3 class="orbitron feed-label">LOCAL CAM [TRACKING]</h3>
-                <div class="video-container">
-                    <video id="input-video" class="input-video" autoplay playsinline></video>
-                    <canvas id="output-canvas" class="output-canvas"></canvas>
+        <!-- Main Workspace -->
+        <main class="workspace-container">
+            <!-- Left Column: Video & Gestures -->
+            <div class="left-col">
+                <div class="video-wrapper glass-panel">
+                    <h3 class="orbitron feed-label"><i data-lucide="video"></i> LOCAL CAM</h3>
+                    <div class="video-container">
+                        <video id="input-video" class="input-video" autoplay playsinline></video>
+                        <canvas id="output-canvas" class="output-canvas"></canvas>
+                    </div>
+                </div>
+                
+                <div class="translation-wrapper glass-panel">
+                    <h3 class="orbitron feed-label"><i data-lucide="hand"></i> GESTURE OUTPUT</h3>
+                    <div class="hands-output-container">
+                        <div class="hand-state">
+                            <div class="hand-label text-gray-300">LEFT HAND</div>
+                            <div id="left-hand-output" class="orbitron neon-text result-text">--</div>
+                        </div>
+                        <div class="hand-state border-left">
+                            <div class="hand-label text-gray-300">RIGHT HAND</div>
+                            <div id="right-hand-output" class="orbitron neon-text result-text">--</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Remote Dummy Feed -->
-            <div class="feed-wrapper remote-feed glass-panel">
-                <h3 class="orbitron feed-label">REMOTE FEED [SIMULATED]</h3>
-                <div class="video-container simulated-user-bg">
-                    <div class="cyber-scanline"></div>
-                    <p class="simulated-text orbitron">WAITING FOR CONNECTION...</p>
+            <!-- Center Column: Comms & Chat -->
+            <div class="mid-col glass-panel flex-col">
+                <div class="stt-wrapper">
+                    <h3 class="orbitron feed-label"><i data-lucide="mic"></i> VOICE TRANSCRIPT</h3>
+                    <div class="stt-box">
+                        <p id="stt-output" class="text-gray-300 stt-text">Microphone standby...</p>
+                    </div>
                 </div>
+
+                <div class="chat-wrapper flex-col">
+                    <h3 class="orbitron feed-label"><i data-lucide="message-square"></i> CHAT STREAM</h3>
+                    <div class="chat-history" id="chat-history">
+                        <div class="chat-message system">Secure channel established.</div>
+                    </div>
+                    
+                    <div class="chat-input-area">
+                        <input type="text" id="chat-input" class="cyber-input" placeholder="Type a message...">
+                        <button id="speak-btn" class="cyber-btn action-btn text-sm" title="Send & Speak text"><i data-lucide="volume-2"></i></button>
+                        <button id="send-btn" class="cyber-btn action-btn text-sm" title="Send text"><i data-lucide="send"></i></button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column/Control Center -->
+            <div class="right-col glass-panel flex-col">
+                <h3 class="orbitron feed-label mb-6"><i data-lucide="settings"></i> CONTROLS</h3>
+                
+                <div class="controls-list flex-col">
+                    <label class="cyber-toggle">
+                        <span class="toggle-label text-gray-300">Sign &rarr; Voice</span>
+                        <div class="toggle-switch">
+                            <input type="checkbox" id="toggle-sign-voice" checked>
+                            <span class="slider"></span>
+                        </div>
+                    </label>
+
+                    <label class="cyber-toggle mt-6">
+                        <span class="toggle-label text-gray-300">Voice &rarr; Text</span>
+                        <div class="toggle-switch">
+                            <input type="checkbox" id="toggle-voice-text" checked>
+                            <span class="slider"></span>
+                        </div>
+                    </label>
+                </div>
+
+                <div class="spacer"></div>
+                
+                <button id="clear-btn" class="cyber-btn control-btn mb-6 width-100"><i data-lucide="trash-2"></i> CLEAR CHAT</button>
+                <a href="index.html" id="end-call-btn" class="cyber-btn control-btn end-btn width-100"><i data-lucide="phone-off"></i> END SESSION</a>
             </div>
         </main>
-
-        <!-- Bottom Output & Controls -->
-        <footer class="bottom-console glass-panel">
-            <div class="output-display">
-                <div class="output-label orbitron">TRANSLATED OUTPUT:</div>
-                <div id="gesture-output" class="neon-text orbitron output-text">AWAITING HAND...</div>
-                <div class="confidence-meter">
-                    <span>CONFIDENCE: </span><span id="confidence-score" class="neon-text">0%</span>
-                </div>
-            </div>
-            <div class="console-controls flex-gap">
-                <button id="reset-btn" class="cyber-btn small-btn">RESET</button>
-                <button id="tts-toggle" class="cyber-btn small-btn active">TTS: ON</button>
-            </div>
-        </footer>
     </div>
 
     <!-- Info Modal -->
     <div id="info-modal" class="cyber-modal hidden">
         <div class="modal-content glass-panel">
-            <h2 class="orbitron neon-text">SIGNOVA v1.0</h2>
+            <h2 class="orbitron neon-text">SIGNOVA v2.0</h2>
             <div class="modal-body">
-                <p><strong>System Architecture:</strong> Client-side MediaPipe Hands processing.</p>
-                <p><strong>Gesture Detection:</strong> Rule-based topological analysis.</p>
-                <p><strong>Stabilization:</strong> 10-frame buffer with majority voting algorithm.</p>
+                <p><strong>System Architecture:</strong> Multi-modal real-time assistive app.</p>
+                <p><strong>Tracking:</strong> Dual-hand topological analysis.</p>
+                <p><strong>Dual-hand stabilization:</strong> Independent 10-frame buffers.</p>
                 <p><strong>Supported Gestures:</strong></p>
                 <ul>
                     <li>Thumbs up &rarr; "YES"</li>
                     <li>Closed fist &rarr; "NO"</li>
                     <li>Open palm &rarr; "HELLO"</li>
-                    <li>Index finger up &rarr; "ONE"</li>
-                    <li>Index + middle &rarr; "TWO"</li>
+                    <li>Index finger &rarr; "ONE" / "l" / "A" / "B" ...</li>
                 </ul>
             </div>
             <button id="close-modal" class="cyber-btn mt-6">ACKNOWLEDGE</button>
@@ -92,5 +136,8 @@
     </div>
 
     <script src="app.js"></script>
+    <script>
+        lucide.createIcons();
+    </script>
 </body>
 </html>
