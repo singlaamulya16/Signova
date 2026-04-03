@@ -17,9 +17,33 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    
+    <!-- PeerJS for WebRTC -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
 <body>
     <canvas id="particles-bg"></canvas>
+
+    <!-- System Health Overlay -->
+    <div id="system-health-overlay" class="cyber-modal hidden">
+        <div class="modal-content glass-panel">
+            <h2 class="orbitron neon-text">SYSTEM COMPATIBILITY CHECK</h2>
+            <div id="health-checklist" class="modal-body">
+                <div class="health-item" id="check-https">
+                    <i data-lucide="shield-check"></i> <span>SECURE CONNECTION (HTTPS)</span>
+                    <span class="health-status">...</span>
+                </div>
+                <div class="health-item" id="check-camera-perm">
+                    <i data-lucide="camera"></i> <span>CAMERA PERMISSIONS</span>
+                    <span class="health-status">...</span>
+                </div>
+            </div>
+            <div id="health-instructions" class="modal-body hidden">
+                <p class="warning-text">Action Required to Proceed...</p>
+            </div>
+            <button id="retry-health-btn" class="cyber-btn mt-6 hidden">RETRY SYSTEM CHECK</button>
+        </div>
+    </div>
 
     <div class="app-layout">
         <!-- Top Bar -->
@@ -38,63 +62,107 @@
 
         <!-- Main Workspace -->
         <main class="workspace-container">
-            <!-- Left Side: Local Cam & Sign Output -->
-            <div class="split-side left-side">
-                <div class="video-container main-video glass-panel p-1">
-                    <video id="input-video" class="input-video" autoplay playsinline></video>
+
+            <!-- Left: Four-Component Grid (Two Videos + Two Translation Panels) -->
+            <div class="feeds-grid" id="feeds-grid">
+                
+                <!-- 1. Local Video -->
+                <div class="video-container glass-panel p-1" id="local-video-wrap">
+                    <video id="input-video" class="input-video" autoplay playsinline muted></video>
                     <canvas id="output-canvas" class="output-canvas"></canvas>
+                    <div id="local-captions" class="captions-overlay"></div>
                     <div class="video-badge orbitron"><i data-lucide="video" class="sm-icon"></i> LOCAL</div>
                 </div>
-                
-                <div class="gesture-output-panel">
-                    <div class="hand-output">
-                        <div class="hand-label text-gray-300 orbitron">LEFT HAND</div>
-                        <div id="left-hand-output" class="orbitron neon-text result-text">--</div>
-                    </div>
-                    <div class="border-left"></div>
-                    <div class="hand-output">
-                        <div class="hand-label text-gray-300 orbitron">RIGHT HAND</div>
-                        <div id="right-hand-output" class="orbitron neon-text result-text">--</div>
-                    </div>
-                </div>
-            </div>
 
-            <!-- Right Side: Remote Cam & Chat Module -->
-            <div class="split-side right-side" id="right-panel">
-                <div class="remote-video-container video-container glass-panel p-1" id="remote-video">
-                    <div class="cyber-scanline"></div>
-                    <div class="simulated-user-bg">
-                        <p class="simulated-text orbitron">WAITING FOR CONNECTION...</p>
-                    </div>
-                    <div class="video-badge orbitron"><i data-lucide="monitor" class="sm-icon"></i> REMOTE</div>
-                </div>
-
-                <div class="chat-container glass-panel">
-                    <div class="chat-header">
-                        <span class="orbitron neon-text flex-gap-sm"><i data-lucide="message-square"></i> COMMS STREAM</span>
-                        <div class="chat-actions">
-                            <button id="expand-chat-btn" class="icon-btn action-icon" title="Expand Chat"><i data-lucide="maximize-2"></i></button>
+                <!-- 2. Remote Video -->
+                <div class="video-container glass-panel p-1" id="remote-video-wrap">
+                    <video id="remote-video" class="remote-video" autoplay playsinline></video>
+                    <div id="remote-captions" class="captions-overlay"></div>
+                    
+                    <div id="connection-overlay" class="connection-overlay">
+                        <div class="simulated-user-bg">
+                            <p class="simulated-text orbitron" id="connection-status">WAITING FOR CONNECTION...</p>
+                            <div class="peer-controls p-4">
+                                <div class="id-display mb-2">
+                                    <span class="label">MY ID:</span>
+                                    <span id="my-peer-id" class="neon-text">--------</span>
+                                    <button id="copy-id-btn" class="icon-btn sm-icon" title="Copy ID"><i data-lucide="copy"></i></button>
+                                </div>
+                                <div class="flex-gap-sm">
+                                    <input type="text" id="remote-peer-id" class="cyber-input sm-input" placeholder="Enter Peer ID...">
+                                    <button id="call-btn" class="cyber-btn sm-btn"><i data-lucide="phone"></i> CALL</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    
-                    <div class="chat-history" id="chat-history">
-                        <div class="chat-message system">Secure channel established.</div>
+                    <div class="video-badge orbitron"><i data-lucide="monitor" class="sm-icon"></i> SIGN FEED</div>
+                    <button id="settings-btn" class="icon-btn remote-settings" title="Connection Settings"><i data-lucide="settings-2"></i></button>
+                </div>
+
+                <!-- 3. Local Translation -->
+                <div class="sign-translation-panel glass-panel">
+                    <div class="translation-header orbitron">
+                        <i data-lucide="hand" class="sm-icon"></i> SIGN TRANSLATION
                     </div>
-                    
-                    <div class="chat-input-area">
-                        <input type="text" id="chat-input" class="cyber-input" placeholder="Type message to speak...">
-                        <button id="speak-btn" class="cyber-btn action-btn text-sm" title="Speak Text"><i data-lucide="volume-2"></i></button>
-                        <button id="send-btn" class="cyber-btn action-btn text-sm" title="Send Text"><i data-lucide="send"></i></button>
+                    <div class="hand-row">
+                        <div class="hand-output">
+                            <div class="hand-label orbitron">LEFT</div>
+                            <div id="left-hand-output" class="orbitron neon-text result-text">--</div>
+                        </div>
+                        <div class="border-left"></div>
+                        <div class="hand-output">
+                            <div class="hand-label orbitron">RIGHT</div>
+                            <div id="right-hand-output" class="orbitron neon-text result-text">--</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Remote Translation -->
+                <div class="sign-translation-panel glass-panel">
+                    <div class="translation-header orbitron">
+                        <i data-lucide="hand" class="sm-icon"></i> SIGN TRANSLATION
+                    </div>
+                    <div class="hand-row">
+                        <div class="hand-output">
+                            <div class="hand-label orbitron">LEFT</div>
+                            <div id="remote-left-output" class="orbitron neon-text result-text">--</div>
+                        </div>
+                        <div class="border-left"></div>
+                        <div class="hand-output">
+                            <div class="hand-label orbitron">RIGHT</div>
+                            <div id="remote-right-output" class="orbitron neon-text result-text">--</div>
+                        </div>
                     </div>
                 </div>
             </div>
+
+            <!-- Right: Chat Sidebar -->
+            <aside class="chat-column glass-panel" id="chat-panel">
+                <div class="chat-header">
+                    <span class="orbitron neon-text flex-gap-sm"><i data-lucide="message-square"></i> COMMS STREAM</span>
+                    <div class="chat-actions">
+                        <button id="expand-chat-btn" class="action-icon" title="Toggle Sidebar"><i data-lucide="maximize-2"></i></button>
+                    </div>
+                </div>
+                
+                <div class="chat-history" id="chat-history">
+                    <div class="chat-message system">Secure channel established.</div>
+                </div>
+                
+                <div class="chat-input-area">
+                    <input type="text" id="chat-input" class="cyber-input" placeholder="Type message to speak...">
+                    <button id="speak-btn" class="cyber-btn action-btn" title="Speak Text"><i data-lucide="volume-2"></i></button>
+                    <button id="send-btn" class="cyber-btn action-btn" title="Send Text"><i data-lucide="send"></i></button>
+                </div>
+            </aside>
+
         </main>
 
         <!-- Bottom Controls -->
         <footer class="bottom-bar glass-panel flex-gap justify-between">
             <div class="toggles flex-gap">
                 <label class="cyber-toggle">
-                    <span class="toggle-label text-gray-300">Sign &rarr; Voice</span>
+                    <span class="toggle-label">Sign &rarr; Voice</span>
                     <div class="toggle-switch">
                         <input type="checkbox" id="toggle-sign-voice" checked>
                         <span class="slider"></span>
@@ -102,7 +170,7 @@
                 </label>
                 <div class="vertical-divider"></div>
                 <label class="cyber-toggle">
-                    <span class="toggle-label text-gray-300">Voice &rarr; Text</span>
+                    <span class="toggle-label">Voice &rarr; Text</span>
                     <div class="toggle-switch">
                         <input type="checkbox" id="toggle-voice-text">
                         <span class="slider"></span>

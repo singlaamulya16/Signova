@@ -20,19 +20,58 @@ const clearBtn = document.getElementById('clear-btn');
 const toggleSignVoice = document.getElementById('toggle-sign-voice');
 const toggleVoiceText = document.getElementById('toggle-voice-text');
 
+// Remote Elements
+const remoteVideoElement = document.getElementById('remote-video');
+const remoteLeftOutput = document.getElementById('remote-left-output');
+const remoteRightOutput = document.getElementById('remote-right-output');
+const myPeerIdDisplay = document.getElementById('my-peer-id');
+const remotePeerIdInput = document.getElementById('remote-peer-id');
+const callBtn = document.getElementById('call-btn');
+const copyIdBtn = document.getElementById('copy-id-btn');
+const connectionOverlay = document.getElementById('connection-overlay');
+const connectionStatus = document.getElementById('connection-status');
+
+// WebRTC & Connection State
+let peer;
+let currentCall;
+let dataConn;
+let localStream;
+let isBusy = false;
+
+// STT State
+let speechRecognition = null;
+let isListening = false;
+let interimMsg = null;
+
+// Optimization Constants for Accuracy & Reliability
+const SMOOTHING_FACTOR = 0.65; // Lower = smoother, higher = more reactive
+const LUMINOSITY_THRESHOLD = 50; // Threshold for 'low light' warning
+const LANDMARK_BUFFER_SIZE = 15;
+const landBuffer = { Left: [], Right: [] };
+
+let modelComplexity = 1; // Default: High Quality
+
+// ICE Servers for WebRTC
+const ICE_SERVERS = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun.peerjs.com' }
+];
+
 // Chat Expansion Hook
-const rightPanel = document.getElementById('right-panel');
+const workspaceContainer = document.querySelector('.workspace-container');
 const expandChatBtn = document.getElementById('expand-chat-btn');
 let isChatExpanded = false;
 
-if (expandChatBtn && rightPanel) {
+if (expandChatBtn && workspaceContainer) {
     expandChatBtn.addEventListener('click', () => {
         isChatExpanded = !isChatExpanded;
         if (isChatExpanded) {
-            rightPanel.classList.add('chat-expanded');
+            workspaceContainer.classList.add('chat-expanded');
             expandChatBtn.innerHTML = '<i data-lucide="minimize-2"></i>';
         } else {
-            rightPanel.classList.remove('chat-expanded');
+            workspaceContainer.classList.remove('chat-expanded');
             expandChatBtn.innerHTML = '<i data-lucide="maximize-2"></i>';
         }
         lucide.createIcons();
@@ -160,6 +199,11 @@ function updatePrediction(handStr, newGesture) {
                 addChatMessage('me', `[Signed Phrase]: ${foundPhrase}`);
             }
             
+            // Sync with Peer
+            if (dataConn && dataConn.open) {
+                dataConn.send({ type: 'gesture', hand: handStr, text: foundPhrase, isPhrase: true });
+            }
+            
             // clear phrase highlight after a delay
             clearTimeout(activePhraseTimer[handStr]);
             activePhraseTimer[handStr] = setTimeout(() => {
@@ -178,6 +222,11 @@ function updatePrediction(handStr, newGesture) {
                 speakText(dominant);
                 addChatMessage('me', `[Signed]: ${dominant}`);
             }
+
+            // Sync with Peer
+            if (dataConn && dataConn.open) {
+                dataConn.send({ type: 'gesture', hand: handStr, text: dominant, isPhrase: false });
+            }
         }
     }
 }
@@ -186,7 +235,7 @@ function updatePrediction(handStr, newGesture) {
 let hands;
 let camera;
 
-async function setupMediaPipe() {
+async function setupMediaPipe(stream) {
     if (!videoElement || !canvasElement) return;
 
     try {
@@ -203,19 +252,27 @@ async function setupMediaPipe() {
 
         hands.onResults(onResults);
 
-        camera = new Camera(videoElement, {
-            onFrame: async () => await hands.send({ image: videoElement }),
-            width: 640,
-            height: 480
-        });
+        // Assign existing stream from health check to video element
+        videoElement.srcObject = stream;
+        localStream = stream;
+        
+        videoElement.onloadedmetadata = () => {
+            videoElement.play();
+            requestAnimationFrame(processFrame);
+        };
 
-        camera.start();
+        async function processFrame() {
+            if (videoElement.paused || videoElement.ended) return;
+            await hands.send({ image: videoElement });
+            requestAnimationFrame(processFrame);
+        }
+
         trackerStatus.innerText = "System Online";
         statusDot.style.animation = "none";
         statusDot.style.opacity = "1";
     } catch (e) {
         console.error(e);
-        trackerStatus.innerText = "Camera Error";
+        trackerStatus.innerText = "Processing Error";
         statusDot.classList.add('error');
     }
 }
@@ -229,59 +286,155 @@ function resizeCanvas() {
     }
 }
 
+// 2. Brightness Check
+let lastBrightnessCheck = 0;
+function checkLighting(img) {
+    const now = Date.now();
+    if (now - lastBrightnessCheck < 5000) return; // Check every 5s
+    lastBrightnessCheck = now;
+    
+    const tempCanvas = document.createElement('canvas');
+    const ctx = tempCanvas.getContext('2d');
+    tempCanvas.width = 40; tempCanvas.height = 30; // low res for speed
+    ctx.drawImage(img, 0, 0, 40, 30);
+    const data = ctx.getImageData(0, 0, 40, 30).data;
+    
+    let totalLuminance = 0;
+    for (let i = 0; i < data.length; i += 4) {
+        // Simple human perception weighting
+        totalLuminance += (0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2]);
+    }
+    const avg = totalLuminance / (40 * 30);
+    
+    // UI Warning
+    let warning = document.getElementById('lighting-warning');
+    if (!warning) {
+        warning = document.createElement('div');
+        warning.id = 'lighting-warning';
+        warning.className = 'lighting-warning';
+        warning.innerHTML = '<i data-lucide="sun"></i><span>LIGHTING TOO LOW</span>';
+        document.getElementById('local-video-wrap').appendChild(warning);
+        // Finalize Icons
+        lucide.createIcons();
+
+        // ---------- Particle Background Engine ----------
+        (function initParticles() {
+            const canvas = document.getElementById('particles-bg');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            let particlesArray = [];
+
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            class Particle {
+                constructor(x, y, dx, dy, size, color) {
+                    this.x = x;
+                    this.y = y;
+                    this.dx = dx;
+                    this.dy = dy;
+                    this.size = size;
+                    this.color = color;
+                }
+                draw() {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2, false);
+                    ctx.fillStyle = this.color;
+                    ctx.fill();
+                }
+                update() {
+                    if (this.x > canvas.width || this.x < 0) this.dx = -this.dx;
+                    if (this.y > canvas.height || this.y < 0) this.dy = -this.dy;
+                    this.x += this.dx;
+                    this.y += this.dy;
+                    this.draw();
+                }
+            }
+
+            function init() {
+                particlesArray = [];
+                let numberOfParticles = (canvas.height * canvas.width) / 18000;
+                for (let i = 0; i < numberOfParticles; i++) {
+                    let size = Math.random() * 2 + 1;
+                    let x = Math.random() * (canvas.width - size * 2) + size;
+                    let y = Math.random() * (canvas.height - size * 2) + size;
+                    let dx = Math.random() * 0.8 - 0.4;
+                    let dy = Math.random() * 0.8 - 0.4;
+                    let color = 'rgba(34, 197, 94, 0.3)';
+                    particlesArray.push(new Particle(x, y, dx, dy, size, color));
+                }
+            }
+
+            function animate() {
+                requestAnimationFrame(animate);
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                particlesArray.forEach(p => p.update());
+            }
+
+            init();
+            animate();
+
+            window.addEventListener('resize', () => {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                init();
+            });
+        })();
+    }
+    
+    if (avg < LUMINOSITY_THRESHOLD) {
+        warning.classList.add('active');
+    } else {
+        warning.classList.remove('active');
+    }
+}
+
 const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
 
-const isFingerExtended = (landmarks, tipIdx, pipIdx) => landmarks[tipIdx].y < landmarks[pipIdx].y;
+const isFingerExtended = (landmarks, tipIdx, pipIdx, anchorIdx) => {
+    // Relative distance check: Is tip further from wrist than PIP?
+    const tipDist = dist(landmarks[tipIdx], landmarks[0]);
+    const pipDist = dist(landmarks[pipIdx], landmarks[0]);
+    return tipDist > pipDist * 1.15;
+};
 
 const getGesture = (landmarks, handedness) => {
-    const indexExt = isFingerExtended(landmarks, 8, 6);
-    const middleExt = isFingerExtended(landmarks, 12, 10);
-    const ringExt = isFingerExtended(landmarks, 16, 14);
-    const pinkyExt = isFingerExtended(landmarks, 20, 18);
+    // 1. Calculate Normalizers (Palm Breadth)
+    // distance from wrist(0) to middle finger mcp(9)
+    const palmSize = dist(landmarks[0], landmarks[9]);
+    
+    // 2. Extension State
+    const indexExt = isFingerExtended(landmarks, 8, 6, 0);
+    const middleExt = isFingerExtended(landmarks, 12, 10, 0);
+    const ringExt = isFingerExtended(landmarks, 16, 14, 0);
+    const pinkyExt = isFingerExtended(landmarks, 20, 18, 0);
     
     let thumbExtended = false;
     if (handedness === 'Left') {
-        thumbExtended = landmarks[4].x < landmarks[5].x - 0.05; 
+        thumbExtended = landmarks[4].x < landmarks[5].x - (palmSize * 0.15); 
     } else {
-        thumbExtended = landmarks[4].x > landmarks[5].x + 0.05;
+        thumbExtended = landmarks[4].x > landmarks[5].x + (palmSize * 0.15);
     }
     
-    const thumbUp = landmarks[4].y < landmarks[5].y && landmarks[4].y < landmarks[3].y && landmarks[4].y < landmarks[8].y && !indexExt && !middleExt;
-    const thumbDown = landmarks[4].y > landmarks[5].y && landmarks[4].y > landmarks[3].y && landmarks[4].y > landmarks[8].y && !indexExt && !middleExt;
+    const thumbUp = landmarks[4].y < landmarks[5].y && landmarks[4].y < landmarks[3].y && !indexExt && !middleExt;
+    const thumbDown = landmarks[4].y > landmarks[5].y && landmarks[4].y > landmarks[3].y && !indexExt && !middleExt;
     
-    const indexMiddleDist = dist(landmarks[8], landmarks[12]);
     const thumbIndexDist = dist(landmarks[4], landmarks[8]);
     
-    if (thumbIndexDist < 0.05 && middleExt && ringExt && pinkyExt) {
-        return "THANK"; // 'F' / 'OK' sign used for THANK
-    }
+    // Normalized gestures
+    if (thumbIndexDist < palmSize * 0.35 && middleExt && ringExt && pinkyExt) return "THANK";
+    if (indexExt && middleExt && ringExt && pinkyExt) return "HELLO"; 
+    if (indexExt && middleExt && ringExt && !pinkyExt) return "HAPPY";
+    if (indexExt && middleExt && !ringExt && !pinkyExt) return (dist(landmarks[8], landmarks[12]) < palmSize * 0.25) ? "NAME" : "V"; 
+    if (indexExt && !middleExt && !ringExt && !pinkyExt) return thumbExtended ? "L" : "YOU";
+    if (indexExt && !middleExt && !ringExt && pinkyExt) return thumbExtended ? "LOVE" : "ROCK";
+    if (!indexExt && !middleExt && !ringExt && pinkyExt) return thumbExtended ? "MY" : "I";
     
-    if (indexExt && middleExt && ringExt && pinkyExt) {
-        return "HELLO"; 
-    } else if (indexExt && middleExt && ringExt && !pinkyExt) {
-        return "HAPPY"; // 'W' shape
-    } else if (indexExt && middleExt && !ringExt && !pinkyExt) {
-        if (indexMiddleDist < 0.04) return "NAME"; // 'U' / 'H' shape
-        return "V"; 
-    } else if (indexExt && !middleExt && !ringExt && !pinkyExt) {
-        if (thumbExtended) return "L"; 
-        return "YOU"; // Index only
-    } else if (indexExt && !middleExt && !ringExt && pinkyExt) {
-        if (thumbExtended) return "LOVE"; // ILY sign
-        return "ROCK";
-    } else if (!indexExt && !middleExt && !ringExt && pinkyExt) {
-        if (thumbExtended) return "MY"; // Y shape
-        return "I";
-    } else if (!indexExt && !middleExt && !ringExt && !pinkyExt) {
+    if (!indexExt && !middleExt && !ringExt && !pinkyExt) {
         if (thumbUp) return "GOOD";
         if (thumbDown) return "BAD";
         if (thumbExtended) return "A";
-        
-        // Approximate 'C' shape detection
-        const isC_shape = (thumbIndexDist > 0.05 && thumbIndexDist < 0.2) && landmarks[8].y > landmarks[6].y && landmarks[12].y > landmarks[10].y;
-        if (isC_shape) return "C";
-        
-        return "NO"; // closed fist
+        return "NO"; 
     }
     return "UNKNOWN";
 }
@@ -303,8 +456,17 @@ function onResults(results) {
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         for (let i = 0; i < results.multiHandLandmarks.length; i++) {
             const landmarks = results.multiHandLandmarks[i];
-            const handLabel = results.multiHandedness[i].label; 
+            const rawLabel = results.multiHandedness[i].label; 
+            // MIRROR FIX: Invert polarity because of scaleX(-1) display
+            const handLabel = rawLabel === 'Left' ? 'Right' : 'Left';
             
+            // Smoothing for Landmark stabilization
+            if (!landBuffer[handLabel]) landBuffer[handLabel] = [];
+            landBuffer[handLabel].push(landmarks);
+            if (landBuffer[handLabel].length > 5) landBuffer[handLabel].shift();
+            
+            checkLighting(results.image);
+
             drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#22c55e', lineWidth: 4});
             drawLandmarks(canvasCtx, landmarks, {color: '#ffffff', lineWidth: 2, radius: 3});
             
@@ -321,117 +483,151 @@ function onResults(results) {
 }
 
 // Communication Logic: Unified Stream (STT + User Chat + System messages)
-let speechRecognition;
-let isListening = false;
-let interimMsg = null;
+function showLiveCaptions(text, isMe, isFinal = false) {
+    const elId = isMe ? 'local-captions' : 'remote-captions';
+    const cap = document.getElementById(elId);
+    if (!cap) return;
+    
+    cap.innerText = text;
+    cap.classList.add('active');
+    if (!isFinal) cap.classList.add('interim');
+    else cap.classList.remove('interim');
+    
+    clearTimeout(cap.timer);
+    if (isFinal) {
+        cap.timer = setTimeout(() => cap.classList.remove('active'), 5000);
+    }
+}
 
+function syncMessageToPeer(text, type = 'chat') {
+    if (dataConn && dataConn.open) {
+        dataConn.send({ type: type, text: text });
+    }
+}
+
+// Shows a greyed-out interim/status message at the bottom of the chat panel
 function showInterim(text) {
     if (!chatHistory) return;
     if (!interimMsg) {
         interimMsg = document.createElement('div');
-        interimMsg.className = 'chat-message system hidden';
-        chatHistory.appendChild(interimMsg);
+        interimMsg.className = 'chat-message interim';
     }
     if (text) {
-        interimMsg.innerHTML = `<i data-lucide="mic" class="sm-icon"></i> ${text}`;
-        interimMsg.classList.remove('hidden');
-        chatHistory.appendChild(interimMsg); // Append forces it to the bottom
-        chatHistory.scrollTop = chatHistory.scrollHeight;
-        if(window.lucide) lucide.createIcons();
+        interimMsg.innerText = text;
+        if (!interimMsg.parentNode) chatHistory.appendChild(interimMsg);
     } else {
-        interimMsg.classList.add('hidden');
-    }
-}
-
-function addMessageToChat(text) {
-    if (!text || text.trim() === '') return;
-    if (!chatHistory) return;
-    
-    const msg = document.createElement('div');
-    msg.className = 'chat-message me'; // Ensure styling matches user message
-    msg.innerText = text;
-    
-    chatHistory.appendChild(msg);
-    if(interimMsg && interimMsg.parentNode === chatHistory) {
-         chatHistory.appendChild(interimMsg); // Keep interim marker at end
+        interimMsg.remove();
+        interimMsg = null;
     }
     chatHistory.scrollTop = chatHistory.scrollHeight;
 }
 
-if (window.SpeechRecognition || window.webkitSpeechRecognition) {
-    const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-    speechRecognition = new SpeechRecognitionAPI();
+function addChatMessage(sender, text, isVoice = false) {
+    if (!chatHistory || !text) return;
+    
+    const msg = document.createElement('div');
+    msg.className = `chat-message ${sender} ${isVoice ? 'voice' : ''}`;
+    msg.innerText = text;
+    chatHistory.appendChild(msg);
+    
+    if (interimMsg && interimMsg.parentNode === chatHistory) {
+         chatHistory.appendChild(interimMsg);
+    }
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+
+    if (sender === 'me') {
+        syncMessageToPeer(text, isVoice ? 'voice' : 'chat');
+        showLiveCaptions(text, true, true);
+    } else {
+        showLiveCaptions(text, false, true);
+    }
+}
+
+// -------- Speech-to-Text (STT) Setup --------
+(function initSTT() {
+    const STTApi = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!STTApi) {
+        console.warn('Speech Recognition not supported in this browser.');
+        if (toggleVoiceText) {
+            toggleVoiceText.disabled = true;
+            const label = toggleVoiceText.closest('.cyber-toggle')?.querySelector('.toggle-label');
+            if (label) label.innerText = 'STT Unsupported';
+        }
+        return;
+    }
+
+    speechRecognition = new STTApi();
     speechRecognition.continuous = true;
     speechRecognition.interimResults = true;
     speechRecognition.lang = 'en-US';
-    
-    speechRecognition.onresult = (event) => {
-        let interimTranscript = "";
-        let finalTranscript = "";
 
+    // Live results: interim goes to captions, final goes to chat
+    speechRecognition.onresult = (event) => {
+        let interim = '';
+        let final = '';
         for (let i = event.resultIndex; i < event.results.length; i++) {
             if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
+                final += event.results[i][0].transcript;
             } else {
-                interimTranscript += event.results[i][0].transcript;
+                interim += event.results[i][0].transcript;
             }
         }
-
-        // Show live spoken words in input field
-        if (chatInput) {
-            chatInput.value = finalTranscript + interimTranscript;
+        // Show interim live in captions overlay both locally and for the peer
+        if (interim) {
+            showLiveCaptions(interim, true, false);
+            syncMessageToPeer(interim, 'voice_interim');
         }
-
-        // Add final transcript to chat
-        if (finalTranscript.trim() !== '') {
-            addMessageToChat(finalTranscript.trim());
-            if (chatInput) {
-                chatInput.value = interimTranscript; // Keep any ongoing interim text
-            }
+        // When a sentence is finalised, commit it to chat
+        if (final.trim()) {
+            addChatMessage('me', final.trim(), true);
+            showInterim('🎤 Listening...');
         }
     };
-    
-    speechRecognition.onstart = () => showInterim("Listening for voice...");
-    
+
+    speechRecognition.onstart = () => {
+        console.log("STT Stream Started");
+        showInterim('🎤 Listening...');
+    };
+
     speechRecognition.onerror = (event) => {
-        console.error("Speech recognition error:", event.error);
-        if (event.error === 'not-allowed') {
+        console.error('STT Error:', event.error);
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
             isListening = false;
             if (toggleVoiceText) toggleVoiceText.checked = false;
             const label = toggleVoiceText?.closest('.cyber-toggle')?.querySelector('.toggle-label');
-            if (label) {
-                label.innerHTML = 'Voice &rarr; Text';
-                label.classList.remove('neon-text');
-                label.style.textShadow = '';
-            }
-            showInterim("Microphone access denied. Please allow permissions.");
+            if (label) { label.innerHTML = 'Voice &rarr; Text'; label.classList.remove('neon-text'); label.style.textShadow = ''; }
+            showInterim('⚠️ Microphone access denied.');
+        } else if (event.error === 'no-speech') {
+            // Silently ignore, will auto-restart
         }
     };
-    
+
+    // Auto-restart while toggle is on (browser stops after silence)
     speechRecognition.onend = () => {
         if (isListening && toggleVoiceText && toggleVoiceText.checked) {
             try { speechRecognition.start(); } catch(e) {}
         } else {
-            showInterim(""); 
+            showInterim('');
+            // Fade out captions when stopped
+            const cap = document.getElementById('local-captions');
+            if (cap) cap.classList.remove('active');
         }
     };
-} else {
-    showInterim("Speech Recognition not supported in this environment.");
-}
+})();
 
 function updateSTTState() {
     if (!toggleVoiceText || !speechRecognition) return;
-    
+
     isListening = toggleVoiceText.checked;
     const label = toggleVoiceText.closest('.cyber-toggle')?.querySelector('.toggle-label');
-    
+
     if (isListening) {
         if (label) {
-            label.innerHTML = 'Listening...';
+            label.innerHTML = '🎤 Listening...';
             label.classList.add('neon-text');
             label.style.textShadow = '0 0 10px #4ade80, 0 0 20px #4ade80';
         }
-        try { speechRecognition.start(); } catch(e) {}
+        try { speechRecognition.start(); } catch(e) { /* already running */ }
     } else {
         if (label) {
             label.innerHTML = 'Voice &rarr; Text';
@@ -439,12 +635,14 @@ function updateSTTState() {
             label.style.textShadow = '';
         }
         try { speechRecognition.stop(); } catch(e) {}
-        showInterim(""); // Clear "Standby..."
-        if (chatInput) chatInput.value = ''; // Clear partial input
+        showInterim('');
+        const cap = document.getElementById('local-captions');
+        if (cap) cap.classList.remove('active');
     }
 }
 
 if (toggleVoiceText) toggleVoiceText.addEventListener('change', updateSTTState);
+
 
 function speakText(text) {
     window.speechSynthesis.cancel();
@@ -452,17 +650,6 @@ function speakText(text) {
     window.speechSynthesis.speak(utterance);
 }
 
-function addChatMessage(sender, text) {
-    if (!chatHistory) return;
-    const msg = document.createElement('div');
-    msg.className = `chat-message ${sender}`;
-    msg.innerText = text;
-    chatHistory.appendChild(msg);
-    if(interimMsg && interimMsg.parentNode === chatHistory) {
-         chatHistory.appendChild(interimMsg); // Keep interim marker at end
-    }
-    chatHistory.scrollTop = chatHistory.scrollHeight;
-}
 
 if (speakBtn && chatInput) {
     speakBtn.addEventListener('click', () => {
@@ -481,7 +668,6 @@ if (sendBtn && chatInput) {
         if (msg) {
             addChatMessage('me', msg);
             chatInput.value = '';
-            setTimeout(() => addChatMessage('them', `User response simulated.`), 1000);
         }
     });
 }
@@ -489,10 +675,10 @@ if (sendBtn && chatInput) {
 if (clearBtn) {
     clearBtn.addEventListener('click', () => {
         if (chatHistory) {
-            chatHistory.innerHTML = '<div class="chat-message system">Secure channel re-established.</div>';
+            chatHistory.innerHTML = '<div class="chat-message system">Channel cleared.</div>';
             interimMsg = null;
-            if(isListening && speechRecognition) {
-                showInterim("Standby for vocal input...");
+            if (isListening && speechRecognition) {
+                showInterim('🎤 Listening...');
             }
         }
         buffers.Left.length = 0;
@@ -509,9 +695,282 @@ chatInput?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendBtn.click();
 });
 
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
     if (document.getElementById('input-video')) {
-        setupMediaPipe();
-        setTimeout(() => updateSTTState(), 1000); 
+        const stream = await checkSystemHealth();
+        if (stream) {
+            setupMediaPipe(stream);
+            setTimeout(() => updateSTTState(), 1000); 
+            initWebRTC();
+        }
+    }
+});
+
+async function checkSystemHealth() {
+    const overlay = document.getElementById('system-health-overlay');
+    const instruct = document.getElementById('health-instructions');
+    const retryBtn = document.getElementById('retry-health-btn');
+    
+    overlay.classList.remove('hidden');
+    
+    let allPassed = true;
+    let activeStream = null;
+
+    // 1. Check HTTPS
+    const isSecure = window.isSecureContext;
+    updateHealthStatus('check-https', isSecure ? 'passed' : 'failed', isSecure ? 'SECURE' : 'INSECURE');
+    if (!isSecure) {
+        allPassed = false;
+        instruct.innerHTML += `<p class="warning-text">SIGNOVA requires HTTPS/SSL to access your camera for security. Please use a secure URL.</p>`;
+    }
+
+    // 2. Check Permissions & Camera
+    try {
+        activeStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { width: 1280, height: 720 }, 
+            audio: { echoCancellation: true } 
+        });
+        updateHealthStatus('check-camera-perm', 'passed', 'GRANTED');
+    } catch (e) {
+        allPassed = false;
+        updateHealthStatus('check-camera-perm', 'failed', 'BLOCKED');
+        instruct.innerHTML += `<p class="warning-text">Camera access was denied. Click the lock icon in your address bar to reset permissions and try again.</p>`;
+        instruct.classList.remove('hidden');
+        retryBtn.classList.remove('hidden');
+    }
+
+    if (allPassed) {
+        setTimeout(() => overlay.classList.add('hidden'), 1000);
+        return activeStream;
+    }
+    
+    return null;
+}
+
+function updateHealthStatus(id, result, text) {
+    const item = document.getElementById(id);
+    if (!item) return;
+    item.className = `health-item ${result}`;
+    const status = item.querySelector('.health-status');
+    if (status) {
+        status.innerText = text;
+        status.className = `health-status ${result}`;
+    }
+}
+
+document.getElementById('retry-health-btn')?.addEventListener('click', () => window.location.reload());
+
+// ---------- WebRTC Implementation (PeerJS) ----------
+
+function initWebRTC() {
+    peer = new Peer({
+        config: { iceServers: ICE_SERVERS }
+    });
+
+    peer.on('open', (id) => {
+        console.log('My Peer ID:', id);
+        if (myPeerIdDisplay) myPeerIdDisplay.innerText = id;
+        if (connectionStatus) connectionStatus.innerText = "READY FOR CALL";
+    });
+
+    peer.on('call', (call) => {
+        console.log('Incoming call...');
+        if (!localStream) {
+            setupStreamAndAnswer(call);
+        } else {
+            call.answer(localStream);
+            handleCall(call);
+        }
+    });
+
+    peer.on('connection', (conn) => {
+        console.log('Inbound Data Connection established');
+        setupDataConnection(conn);
+    });
+
+    peer.on('error', (err) => {
+        console.error('PeerJS Error:', err);
+        if (connectionStatus) connectionStatus.innerText = "CONNECTION ERROR";
+    });
+
+    // Control Handlers
+    if (callBtn) {
+        callBtn.addEventListener('click', () => {
+            const remoteId = remotePeerIdInput.value.trim();
+            if (remoteId) initiateCall(remoteId);
+        });
+    }
+
+    const nextBtn = document.getElementById('next-btn');
+    if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+            console.log("Skipping to next partner...");
+            handleCallClosed();
+        });
+    }
+
+    const mobileJoinBtn = document.getElementById('mobile-join-btn');
+    if (mobileJoinBtn) {
+        mobileJoinBtn.addEventListener('click', () => {
+            if (remoteVideoElement) remoteVideoElement.play();
+            if (videoElement) videoElement.play();
+            document.getElementById('mobile-start-overlay').classList.add('hidden');
+        });
+    }
+
+    if (copyIdBtn) {
+        copyIdBtn.addEventListener('click', () => {
+            const id = myPeerIdDisplay.innerText;
+            navigator.clipboard.writeText(id);
+            copyIdBtn.innerHTML = '<i data-lucide="check"></i>';
+            setTimeout(() => {
+                copyIdBtn.innerHTML = '<i data-lucide="copy"></i>';
+                lucide.createIcons();
+            }, 2000);
+            lucide.createIcons();
+        });
+    }
+
+    const endCallBtn = document.getElementById('end-call-btn');
+    if (endCallBtn) {
+        endCallBtn.addEventListener('click', (e) => {
+            // If they are just clicking to go back, we don't want to prevent navigation, 
+            // but we do want to close connections.
+            if (currentCall) currentCall.close();
+            if (dataConn) dataConn.close();
+        });
+    }
+}
+
+async function setupStreamAndAnswer(call) {
+    // If stream not ready, wait a bit or try to get it
+    if (!localStream) {
+        localStream = videoElement.captureStream ? videoElement.captureStream() : videoElement.mozCaptureStream();
+    }
+    call.answer(localStream);
+    handleCall(call);
+}
+
+function initiateCall(remoteId) {
+    if (!localStream) {
+        localStream = videoElement.captureStream ? videoElement.captureStream() : videoElement.mozCaptureStream();
+    }
+    
+    // 1. Media Call
+    const call = peer.call(remoteId, localStream);
+    handleCall(call);
+
+    // 2. Data Connection
+    const conn = peer.connect(remoteId);
+    setupDataConnection(conn);
+}
+
+function handleCall(call) {
+    currentCall = call;
+    if (connectionStatus) {
+        connectionStatus.innerText = "CONNECTING...";
+        connectionStatus.classList.add('pulse-glow');
+    }
+
+    call.on('stream', (remoteStream) => {
+        console.log('Received remote stream');
+        if (remoteVideoElement) {
+            remoteVideoElement.srcObject = remoteStream;
+            
+            remoteVideoElement.play().catch(err => {
+                console.warn("Autoplay blocked.");
+            });
+
+            if (connectionOverlay) connectionOverlay.classList.add('connected');
+            if (connectionStatus) connectionStatus.innerText = "CONNECTED";
+            isBusy = true;
+            lucide.createIcons();
+        }
+    });
+
+    call.on('close', () => {
+        handleCallClosed();
+    });
+}
+
+function setupDataConnection(conn) {
+    dataConn = conn;
+    
+    conn.on('data', (data) => {
+        if (data.type === 'chat' || data.type === 'voice') {
+            addChatMessage('them', data.text, data.type === 'voice');
+            showLiveCaptions(data.text, false, true);
+        } else if (data.type === 'voice_interim') {
+            showLiveCaptions(data.text, false, false);
+        } else if (data.type === 'gesture') {
+            updateRemoteGesture(data.hand, data.text, data.isPhrase);
+        }
+    });
+
+    conn.on('open', () => {
+        console.log('Secure Data Channel Open');
+        if (connectionOverlay) connectionOverlay.classList.add('connected');
+    });
+
+    conn.on('close', () => {
+        handleCallClosed();
+    });
+}
+
+function updateRemoteGesture(hand, text, isPhrase) {
+    const el = hand === 'Left' ? remoteLeftOutput : remoteRightOutput;
+    if (el) {
+        el.innerText = text;
+        if (isPhrase) {
+            el.classList.add('phrase-mode');
+            // Remote phrases also get TTS if toggled (optional, but better UX)
+            if (toggleSignVoice && toggleSignVoice.checked) {
+                speakText(text);
+            }
+        } else {
+            el.classList.remove('phrase-mode');
+        }
+        
+        // Remote cleanup
+        setTimeout(() => {
+            if (el.innerText === text) {
+                el.innerText = "--";
+                el.classList.remove('phrase-mode');
+            }
+        }, isPhrase ? 3000 : 2000);
+    }
+}
+
+function handleCallClosed() {
+    // Force disconnect
+    if (currentCall) {
+        currentCall.close();
+        currentCall = null;
+    }
+    if (dataConn) {
+        dataConn.close();
+        dataConn = null;
+    }
+
+    if (connectionOverlay) connectionOverlay.classList.remove('connected');
+    if (connectionStatus) connectionStatus.innerText = "FINDING NEXT PARTNER...";
+    if (remoteVideoElement) remoteVideoElement.srcObject = null;
+    
+    isBusy = false;
+    
+    // Update lobby I'm back to free
+    if (peer && peer.id) {
+        lobby.get(peer.id).put({ id: peer.id, status: 'free', time: Date.now() });
+    }
+    
+    setTimeout(() => {
+        if (connectionStatus) connectionStatus.innerText = "FINDING PARTNER...";
+    }, 1500);
+}
+
+// Cleanup: Mark offline when tab is closed
+window.addEventListener('beforeunload', () => {
+    if (peer && peer.id) {
+        lobby.get(peer.id).put({ status: 'offline', time: Date.now() });
     }
 });
