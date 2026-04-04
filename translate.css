@@ -545,6 +545,11 @@
     padding-top: 0.5rem;
 }
 
+.workspace-container:not(.chat-expanded) .chat-input-area .cyber-input {
+    flex: 0.6;
+    max-width: 200px;
+}
+
 /* ---------- Inputs & Toggles ---------- */
 .cyber-input {
     flex: 1;
