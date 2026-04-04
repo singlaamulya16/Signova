@@ -90,7 +90,7 @@
                                 </div>
                                 <div class="flex-gap-sm">
                                     <input type="text" id="remote-peer-id" class="cyber-input sm-input" placeholder="Enter Peer ID...">
-                                    <button id="call-btn" class="cyber-btn sm-btn" style="display: flex; align-items: center; justify-content: center;"><i data-lucide="phone" style="width: 18px; height: 18px;"></i></button>
+                                    <button id="call-btn" class="cyber-btn sm-btn" title="Start Call" style="display: flex; align-items: center; justify-content: center;"><i data-lucide="phone" style="width: 18px; height: 18px;"></i></button>
                                 </div>
                             </div>
                         </div>
@@ -207,7 +207,10 @@
 
     <script src="app.js"></script>
     <script>
-        lucide.createIcons();
+        window.addEventListener("DOMContentLoaded", () => {
+            console.log("Initializing Lucide icons");
+            lucide.createIcons();
+        });
     </script>
 </body>
 </html>

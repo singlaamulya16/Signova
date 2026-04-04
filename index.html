@@ -107,7 +107,10 @@
         });
 
         // Initialize SVGs
-        lucide.createIcons();
+        window.addEventListener("DOMContentLoaded", () => {
+            console.log("Initializing Lucide icons");
+            lucide.createIcons();
+        });
     </script>
 </body>
 
