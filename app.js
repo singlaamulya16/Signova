@@ -629,12 +629,22 @@ function updateSTTState() {
             label.classList.add('neon-text');
             label.style.textShadow = '0 0 10px #4ade80, 0 0 20px #4ade80';
         }
+        if (speakBtn) {
+            speakBtn.style.color = '#22c55e';
+            speakBtn.style.borderColor = '#22c55e';
+            speakBtn.style.boxShadow = '0 0 15px rgba(34, 197, 94, 0.4)';
+        }
         try { speechRecognition.start(); } catch(e) { /* already running */ }
     } else {
         if (label) {
             label.innerHTML = 'Voice &rarr; Text';
             label.classList.remove('neon-text');
             label.style.textShadow = '';
+        }
+        if (speakBtn) {
+            speakBtn.style.color = '';
+            speakBtn.style.borderColor = '';
+            speakBtn.style.boxShadow = '';
         }
         try { speechRecognition.stop(); } catch(e) {}
         if (chatInput) chatInput.value = '';
@@ -654,13 +664,11 @@ function speakText(text) {
 }
 
 
-if (speakBtn && chatInput) {
+if (speakBtn) {
     speakBtn.addEventListener('click', () => {
-        const msg = chatInput.value.trim();
-        if (msg) {
-            speakText(msg);
-            addChatMessage('me', `[Spoke]: ${msg}`);
-            chatInput.value = '';
+        if (toggleVoiceText) {
+            toggleVoiceText.checked = !toggleVoiceText.checked;
+            updateSTTState();
         }
     });
 }
