@@ -317,10 +317,6 @@
     text-shadow: 0 0 10px var(--neon-green-glow);
 }
 
-#call-btn svg {
-  transform: translateX(-2px);
-}
-
 .peer-controls {
     width: 90%;
     max-width: 320px;
