@@ -163,7 +163,13 @@ function updatePrediction(handStr, newGesture) {
     const activeLength = buffer.filter(g => g !== "UNKNOWN").length;
     const conf = activeLength > 0 ? (maxCount / activeLength) * 100 : 0;
 
-    if (activeLength >= BUFFER_SIZE / 2 && conf > 50 && dominant !== stableGestures[handStr]) {
+    let requiredConf = 50;
+    // Apply higher confidence threshold for specific demo gestures to ensure stability
+    if (["THREE", "FOUR", "THUMBS DOWN", "ROCK", "LOVE"].includes(dominant)) {
+        requiredConf = 75; // strict 75% stability required
+    }
+
+    if (activeLength >= BUFFER_SIZE / 2 && conf > requiredConf && dominant !== stableGestures[handStr]) {
         stableGestures[handStr] = dominant;
         
         // --- Sequence Tracker ---
@@ -423,8 +429,15 @@ const getGesture = (landmarks, handedness) => {
     
     // Normalized gestures
     if (thumbIndexDist < palmSize * 0.35 && middleExt && ringExt && pinkyExt) return "THANK";
-    if (indexExt && middleExt && ringExt && pinkyExt) return "HELLO"; 
-    if (indexExt && middleExt && ringExt && !pinkyExt) return "HAPPY";
+    
+    if (indexExt && middleExt && ringExt && pinkyExt) {
+        return thumbExtended ? "HELLO" : "FOUR";
+    }
+    
+    if (indexExt && middleExt && ringExt && !pinkyExt) {
+        return thumbExtended ? "HAPPY" : "THREE";
+    }
+    
     if (indexExt && middleExt && !ringExt && !pinkyExt) return (dist(landmarks[8], landmarks[12]) < palmSize * 0.25) ? "NAME" : "V"; 
     if (indexExt && !middleExt && !ringExt && !pinkyExt) return thumbExtended ? "L" : "YOU";
     if (indexExt && !middleExt && !ringExt && pinkyExt) return thumbExtended ? "LOVE" : "ROCK";
@@ -432,7 +445,7 @@ const getGesture = (landmarks, handedness) => {
     
     if (!indexExt && !middleExt && !ringExt && !pinkyExt) {
         if (thumbUp) return "GOOD";
-        if (thumbDown) return "BAD";
+        if (thumbDown) return "THUMBS DOWN";
         if (thumbExtended) return "A";
         return "NO"; 
     }
