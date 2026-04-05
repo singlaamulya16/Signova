@@ -191,7 +191,8 @@
 }
 
 /* ---------- Captions Overlays ---------- */
-.captions-overlay {
+
+/*.captions-overlay {
     position: absolute;
     bottom: 2rem;
     left: 1.5rem;
@@ -223,7 +224,7 @@
 .captions-overlay.interim {
     border-style: dashed;
     color: rgba(255, 255, 255, 0.6);
-}
+} */
 
 /* ---------- Lighting Warning ---------- */
 .lighting-warning {
